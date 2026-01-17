@@ -4,7 +4,7 @@ import math
 import matplotlib.pyplot as plt
 import os
 
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Image
 from reportlab.lib.styles import getSampleStyleSheet
 
 # ==================================================
@@ -30,7 +30,7 @@ if st.button("🔄 Reset all inputs"):
     st.rerun()
 
 # ==================================================
-# FULL Z TABLE (AS PER IS 1893:2025)
+# FULL Z TABLE (IS 1893:2025)
 # ==================================================
 Z_TABLE = {
     "VI": {75:0.300,175:0.375,275:0.450,475:0.500,975:0.600,1275:0.625,2475:0.750,4975:0.940,9975:1.125},
@@ -45,12 +45,6 @@ Z_TABLE = {
 # ==================================================
 if "base" not in st.session_state:
     st.session_state.base = None
-if "storey" not in st.session_state:
-    st.session_state.storey = None
-if "multi" not in st.session_state:
-    st.session_state.multi = None
-if "geometry_locked" not in st.session_state:
-    st.session_state.geometry_locked = False
 
 # ==================================================
 # FUNCTIONS
@@ -58,10 +52,10 @@ if "geometry_locked" not in st.session_state:
 def A_NH(T):
     return 2.5 if T <= 0.4 else 1.0 / T
 
-def plot_storey(df, col, title, fname):
+def plot_storey(df, fname, title):
     fig, ax = plt.subplots()
-    ax.plot(df[col], df["Storey"], marker="o")
-    ax.set_xlabel("Shear (kN)")
+    ax.plot(df["Storey Shear"], df["Storey"], marker="o")
+    ax.set_xlabel("Storey Shear (kN)")
     ax.set_ylabel("Storey")
     ax.set_title(title)
     ax.grid(True)
@@ -77,13 +71,13 @@ def safe_image(path, w=400, h=250):
 # TABS
 # ==================================================
 tab1, tab2, tab3 = st.tabs([
-    "① Base Shear (X & Y)",
-    "② Storey Forces & Diagrams",
+    "① Base Shear (Geometry Locked)",
+    "② Storey-wise Forces (Editable)",
     "③ Multi-Zone Study"
 ])
 
 # ==================================================
-# TAB 1 – BASE SHEAR
+# TAB 1 – BASE SHEAR (GEOMETRY LOCKED)
 # ==================================================
 with tab1:
     zone = st.selectbox("Earthquake Zone", list(Z_TABLE.keys()))
@@ -98,7 +92,7 @@ with tab1:
     R = st.number_input("Response Reduction Factor R", value=5.0)
     W = st.number_input("Total Seismic Weight W (kN)", value=10000.0)
 
-    st.markdown("### Building Geometry")
+    st.markdown("### Global Building Geometry")
     H = st.number_input("Total Height H (m)", min_value=0.1, value=15.0)
     dx = st.number_input("Plan Dimension dx (m)", min_value=0.1, value=10.0)
     dy = st.number_input("Plan Dimension dy (m)", min_value=0.1, value=8.6)
@@ -112,12 +106,11 @@ with tab1:
 
         st.session_state.base = {
             "Zone": zone, "TR": TR, "Z": Z,
+            "H": H, "dx": dx, "dy": dy,
             "Tx": Tx, "Ty": Ty,
             "Vx": Vx, "Vy": Vy,
             "W": W
         }
-
-        st.session_state.geometry_locked = True
 
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Tx (s)", f"{Tx:.3f}")
@@ -126,20 +119,16 @@ with tab1:
         c4.metric("VBD,H,Y (kN)", f"{Vy:.2f}")
 
 # ==================================================
-# TAB 2 – STOREY FORCES
+# TAB 2 – STOREY-WISE FORCES (FULLY EDITABLE)
 # ==================================================
 with tab2:
     if st.session_state.base is None:
         st.warning("Compute base shear in Tab ① first.")
     else:
-        if st.session_state.geometry_locked:
-            st.info("🔒 Storey geometry locked (Base shear already computed).")
-
-        if st.button("🔓 Unlock Geometry (Recompute Base Shear)"):
-            st.session_state.geometry_locked = False
-            st.session_state.base = None
-            st.warning("Geometry unlocked. Please recompute base shear.")
-            st.rerun()
+        st.info(
+            "Storey heights and weights are editable here to study force distribution. "
+            "Base shear remains unchanged."
+        )
 
         direction = st.selectbox("Horizontal Direction", ["X","Y"])
         V = st.session_state.base["Vx"] if direction=="X" else st.session_state.base["Vy"]
@@ -152,15 +141,13 @@ with tab2:
                 f"W{i} (kN)",
                 min_value=0.0,
                 value=float(st.session_state.base["W"]/N),
-                key=f"W_{direction}_{i}",
-                disabled=st.session_state.geometry_locked
+                key=f"W_{direction}_{i}"
             )
             Hi = st.number_input(
                 f"H{i} (m)",
                 min_value=0.1,
                 value=float(3*i),
-                key=f"H_{direction}_{i}",
-                disabled=st.session_state.geometry_locked
+                key=f"H_{direction}_{i}"
             )
             rows.append([i, Wi, Hi])
 
@@ -169,42 +156,42 @@ with tab2:
         df["Qi"] = df["WiHi²"] / df["WiHi²"].sum() * V
         df["Storey Shear"] = df["Qi"][::-1].cumsum()[::-1]
 
-        st.session_state.storey = df
         st.dataframe(df.round(3), use_container_width=True)
 
         plot_storey(
             df,
-            "Storey Shear",
-            f"Storey Shear Diagram ({direction})",
-            f"storey_{direction}.png"
+            f"storey_{direction}.png",
+            f"Storey Shear Diagram ({direction})"
         )
 
 # ==================================================
 # TAB 3 – MULTI-ZONE STUDY
 # ==================================================
 with tab3:
-    zones = st.multiselect("Select Zones", list(Z_TABLE.keys()), default=["II","III","IV"])
+    zones = st.multiselect(
+        "Select Zones",
+        list(Z_TABLE.keys()),
+        default=["II","III","IV"]
+    )
+
     TR_mz = st.selectbox(
         "Return Period (years)",
-        [75,175,275,475,975,1275,2475,4975,9975],
-        key="mz_tr"
+        [75,175,275,475,975,1275,2475,4975,9975]
     )
 
     rows = []
     for z in zones:
         Z = Z_TABLE[z][TR_mz]
-        rows.append([z, Z, Z*st.session_state.base["W"] if st.session_state.base else 0])
+        rows.append([z, Z, Z * st.session_state.base["W"] if st.session_state.base else 0])
 
     dfz = pd.DataFrame(rows, columns=["Zone","Z","Base Shear (kN)"])
-    st.session_state.multi = dfz
-
     st.dataframe(dfz.round(3), use_container_width=True)
 
     fig, ax = plt.subplots()
     ax.plot(dfz["Zone"], dfz["Base Shear (kN)"], marker="o")
     ax.set_xlabel("Zone")
     ax.set_ylabel("Base Shear (kN)")
-    ax.set_title("Base Shear Variation with Zone")
+    ax.set_title("Base Shear vs Zone")
     ax.grid(True)
     fig.savefig("multi_zone.png", dpi=300)
     st.pyplot(fig)
@@ -213,20 +200,17 @@ with tab3:
 # EXPORT SECTION
 # ==================================================
 st.markdown("---")
-st.header("📤 Export All Outputs")
+st.header("📤 Export Outputs")
 
-if st.session_state.storey is not None:
+if st.session_state.base is not None:
 
-    excel_file = "IS1893_2025_All_Outputs.xlsx"
+    excel_file = "IS1893_2025_Output.xlsx"
     with pd.ExcelWriter(excel_file) as writer:
         pd.DataFrame.from_dict(st.session_state.base, orient="index").to_excel(writer, "Base_Shear")
-        st.session_state.storey.to_excel(writer, "Storey_Forces", index=False)
-        if st.session_state.multi is not None:
-            st.session_state.multi.to_excel(writer, "Multi_Zone", index=False)
 
-    st.download_button("Download Excel (All Tabs)", open(excel_file, "rb"), excel_file)
+    st.download_button("Download Excel", open(excel_file, "rb"), excel_file)
 
-    pdf_file = "IS1893_2025_All_Outputs.pdf"
+    pdf_file = "IS1893_2025_Output.pdf"
     doc = SimpleDocTemplate(pdf_file)
     styles = getSampleStyleSheet()
 
@@ -242,7 +226,7 @@ if st.session_state.storey is not None:
 
     doc.build(content)
 
-    st.download_button("Download PDF (All Tabs)", open(pdf_file, "rb"), pdf_file)
+    st.download_button("Download PDF", open(pdf_file, "rb"), pdf_file)
 
 st.info(
     "📘 This application is intended strictly for educational and academic use. "
