@@ -253,5 +253,15 @@ with tab3:
             "Download PDF (Base Shear + Multi-Zone)",
             open(pdf_file, "rb"),
             file_name=pdf_file
+
+            # ==================================================
+# FOOTER
+# ==================================================
+st.markdown("---")
+st.info(
+    "📘 **For Educational Use Only**\n\n"
+    "Independent verification is mandatory before professional or statutory use.\n\n"
+    "**Created by: Vrushali Kamalakar**"
+
         )
 
