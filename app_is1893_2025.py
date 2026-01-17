@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import math
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Table
 from reportlab.lib.styles import getSampleStyleSheet
 
@@ -15,7 +16,7 @@ st.title("IS 1893:2025 – Horizontal & Vertical Seismic Forces")
 st.subheader("Equivalent Static Method (Clauses 6, 8 & 8.2.4)")
 
 # --------------------------------------------------
-# BASIC INPUTS
+# BASIC SEISMIC INPUTS
 # --------------------------------------------------
 st.markdown("## Basic Seismic Parameters")
 
@@ -24,10 +25,47 @@ I = st.number_input("Importance Factor (I)", value=1.0, step=0.1)
 R = st.number_input("Response Reduction Factor (R)", value=5.0, step=0.5)
 site = st.selectbox("Site Class", ["A/B", "C", "D"])
 
-T_H = st.number_input("Horizontal Natural Period TH (s)", value=1.0)
-T_V = st.number_input("Vertical Natural Period TV (s)", value=0.4)
-
 W_total = st.number_input("Total Seismic Weight W (kN)", value=10000.0)
+
+# --------------------------------------------------
+# APPROXIMATE FUNDAMENTAL PERIOD (IS 1893:2025)
+# --------------------------------------------------
+st.markdown("## Approximate Fundamental Period for Horizontal Action")
+
+use_Ta = st.checkbox(
+    "Use Ta = 0.09 H / √d (IS 1893:2025)",
+    value=True
+)
+
+H_total = st.number_input(
+    "Total Building Height H (m)",
+    value=15.0,
+    step=1.0
+)
+
+d_base = st.number_input(
+    "Base Dimension d along shaking direction (m)",
+    value=10.0,
+    step=0.5
+)
+
+T_H_manual = st.number_input(
+    "Manual Horizontal Period TH (s) (if Ta not used)",
+    value=1.0,
+    step=0.1
+)
+
+T_V = st.number_input(
+    "Vertical Natural Period TV (s)",
+    value=0.4,
+    step=0.05
+)
+
+# Determine horizontal period to use
+if use_Ta:
+    T_H_used = 0.09 * H_total / math.sqrt(d_base)
+else:
+    T_H_used = T_H_manual
 
 # --------------------------------------------------
 # STOREY DATA
@@ -80,7 +118,7 @@ def gamma_v(TV, site):
 # --------------------------------------------------
 # BASE SHEAR CALCULATION
 # --------------------------------------------------
-A_HD = (Z * I * A_NH(T_H, site)) / R
+A_HD = (Z * I * A_NH(T_H_used, site)) / R
 V_BD_H = A_HD * W_total
 
 A_NV = delta_v(T_V, site) * gamma_v(T_V, site)
@@ -92,16 +130,16 @@ V_BD_V = A_VD * W_total
 # --------------------------------------------------
 df["WiHi²"] = df["Wi (kN)"] * df["Hi (m)"]**2
 
+# Horizontal
 df["QDi,H (kN)"] = (
     df["WiHi²"] / df["WiHi²"].sum()
 ) * V_BD_H
-
 df["VDi,H (kN)"] = df["QDi,H (kN)"][::-1].cumsum()[::-1]
 
+# Vertical
 df["QDi,V (kN)"] = (
     df["Wi (kN)"] / df["Wi (kN)"].sum()
 ) * V_BD_V
-
 df["VDi,V (kN)"] = df["QDi,V (kN)"][::-1].cumsum()[::-1]
 
 # --------------------------------------------------
@@ -109,11 +147,20 @@ df["VDi,V (kN)"] = df["QDi,V (kN)"][::-1].cumsum()[::-1]
 # --------------------------------------------------
 st.markdown("## Results Summary")
 
-col1, col2 = st.columns(2)
-with col1:
+c1, c2, c3 = st.columns(3)
+with c1:
+    st.metric("Horizontal Period Used TH (s)", f"{T_H_used:.3f}")
+with c2:
     st.metric("Horizontal Base Shear VBD,H (kN)", f"{V_BD_H:.2f}")
-with col2:
+with c3:
     st.metric("Vertical Base Shear VBD,V (kN)", f"{V_BD_V:.2f}")
+
+if H_total > 50:
+    st.warning(
+        "Building height exceeds 50 m. "
+        "As per IS 1893:2025, approximate period may not be applicable; "
+        "IS 16700 provisions should be checked."
+    )
 
 st.markdown("## Floor-wise Seismic Force Distribution")
 st.dataframe(df.round(3), use_container_width=True)
@@ -141,14 +188,14 @@ content = [
     Paragraph("IS 1893:2025 – Seismic Force Distribution", styles["Title"]),
     Paragraph(
         f"Horizontal Base Shear = {V_BD_H:.2f} kN<br/>"
-        f"Vertical Base Shear = {V_BD_V:.2f} kN",
+        f"Vertical Base Shear = {V_BD_V:.2f} kN<br/>"
+        f"Horizontal Period Used TH = {T_H_used:.3f} s",
         styles["Normal"]
     )
 ]
 
 table_data = [df.columns.tolist()] + df.round(3).values.tolist()
 content.append(Table(table_data))
-
 doc.build(content)
 
 st.download_button(
@@ -159,8 +206,9 @@ st.download_button(
 
 st.info(
     "Compliance Notes:\n"
-    "- Horizontal force uses Response Reduction Factor R\n"
-    "- Vertical force does NOT use R (IS 1893:2025)\n"
-    "- Horizontal distribution uses Wi·Hi²\n"
-    "- Vertical distribution uses Wi only"
+    "- Horizontal action uses Response Reduction Factor R\n"
+    "- Vertical action does NOT use R\n"
+    "- Horizontal force distribution uses Wi·Hi²\n"
+    "- Vertical force distribution uses Wi only\n"
+    "- Approximate period as per IS 1893:2025"
 )
