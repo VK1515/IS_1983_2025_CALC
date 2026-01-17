@@ -1,5 +1,4 @@
 import streamlit as st
-import pandas as pd
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
@@ -50,143 +49,89 @@ def spectral_acceleration(T, soil):
         return 3.0 if T <= 0.6 else 1.8 / T
 
 
+def calculate(zone, structure, Vs, h, W, I=1.0):
+    Z = ZONE_FACTOR[zone]
+    R, coeff = STRUCTURE_R_T[structure]
+
+    soil = classify_soil(Vs)
+    T = time_period(h, coeff)
+    ANH = spectral_acceleration(T, soil)
+
+    AHD = (Z * I * ANH) / R
+    VBD = AHD * W
+
+    return soil, Z, R, T, ANH, AHD, VBD
+
+
 # -------------------------------------------------
 # STREAMLIT UI
 # -------------------------------------------------
 
-st.set_page_config(page_title="IS 1893:2025 Seismic Forces", layout="wide")
-st.title("IS 1893 (Part 1):2025 – Seismic Force Calculator")
+st.set_page_config(page_title="IS 1893:2025 Base Shear", layout="centered")
 
-st.markdown("**Equivalent Static Method with Storey-wise Distribution**")
+st.title("IS 1893 (Part 1):2025 – Base Shear Calculator")
+
+st.markdown("**Equivalent Static Method with Automatic Period & Spectrum**")
 
 structure = st.selectbox("Type of Structure", STRUCTURE_R_T.keys())
 zone = st.selectbox("Seismic Zone", ZONE_FACTOR.keys())
 
 Vs = st.number_input("Shear Wave Velocity Vs (m/s)", min_value=50.0, value=400.0, step=10.0)
-h_total = st.number_input("Total Building Height h (m)", min_value=3.0, value=30.0, step=1.0)
-W_total = st.number_input("Total Seismic Weight W (kN)", min_value=0.0, value=10000.0, step=500.0)
-
-VBD_V = st.number_input("Design Vertical Base Force VBD,V (kN)", value=0.30 * W_total)
-
-# -------------------------------------------------
-# STOREY INPUTS
-# -------------------------------------------------
-
-st.subheader("Storey-wise Input Data")
-
-N = st.number_input("Number of Storeys", min_value=1, value=5, step=1)
-
-storey_heights = []
-storey_weights = []
-
-for i in range(int(N)):
-    c1, c2 = st.columns(2)
-    with c1:
-        Hi = st.number_input(f"Height of Storey {i+1} from base (m)", value=(i+1)*(h_total/N))
-    with c2:
-        Wi = st.number_input(f"Seismic Weight at Storey {i+1} (kN)", value=W_total/N)
-    storey_heights.append(Hi)
-    storey_weights.append(Wi)
+h = st.number_input("Building Height h (m)", min_value=3.0, value=30.0, step=1.0)
+W = st.number_input("Seismic Weight W (kN)", min_value=0.0, value=10000.0, step=500.0)
 
 # -------------------------------------------------
 # COMPUTE
 # -------------------------------------------------
 
-if st.button("Compute Seismic Forces"):
+if st.button("Compute Base Shear"):
 
-    # ---- Base shear calculation (unchanged) ----
-    Z = ZONE_FACTOR[zone]
-    R, coeff = STRUCTURE_R_T[structure]
-    soil = classify_soil(Vs)
-    T = time_period(h_total, coeff)
-    ANH = spectral_acceleration(T, soil)
+    soil, Z, R, T, ANH, AHD, VBD = calculate(zone, structure, Vs, h, W)
 
-    AHD = (Z * 1.0 * ANH) / R
-    VBD_H = AHD * W_total
+    st.subheader("Derived Parameters")
+    st.write(f"Soil Classification: **{soil}**")
+    st.write(f"Fundamental Time Period T = **{T:.3f} s**")
+    st.write(f"Spectral Acceleration AₙH(T) = **{ANH:.3f}**")
 
-    # ---- Horizontal force distribution ----
-    denom = sum(storey_weights[i] * storey_heights[i]**2 for i in range(N))
-    QD_H = [(storey_weights[i]*storey_heights[i]**2/denom)*VBD_H for i in range(N)]
-
-    VD_H = []
-    cum = 0.0
-    for i in reversed(range(N)):
-        cum += QD_H[i]
-        VD_H.insert(0, cum)
-
-    # ---- Vertical force distribution ----
-    total_W = sum(storey_weights)
-    QD_V = [(storey_weights[i]/total_W)*VBD_V for i in range(N)]
-
-    VD_V = []
-    cum_v = 0.0
-    for i in reversed(range(N)):
-        cum_v += QD_V[i]
-        VD_V.insert(0, cum_v)
-
-    # ---- Interaction (SRSS) ----
-    V_combined = [
-        math.sqrt(VD_H[i]**2 + VD_V[i]**2)
-        for i in range(N)
-    ]
-
-    # -------------------------------------------------
-    # RESULTS TABLE
-    # -------------------------------------------------
-
-    df = pd.DataFrame({
-        "Storey": range(1, N+1),
-        "Height H (m)": storey_heights,
-        "Weight W (kN)": storey_weights,
-        "Q_Di,H (kN)": QD_H,
-        "V_Di,H (kN)": VD_H,
-        "Q_Di,V (kN)": QD_V,
-        "V_Di,V (kN)": VD_V,
-        "Combined Shear (kN)": V_combined
-    })
-
-    st.subheader("Storey-wise Seismic Forces")
-    st.dataframe(df, use_container_width=True)
-
-    # -------------------------------------------------
-    # EXCEL EXPORT
-    # -------------------------------------------------
-
-    excel_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-    df.to_excel(excel_file.name, index=False)
-
-    with open(excel_file.name, "rb") as f:
-        st.download_button(
-            "Download Excel Results",
-            f,
-            file_name="IS1893_2025_Storey_Forces.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    st.subheader("Design Results")
+    st.success(f"Design Acceleration Coefficient AHD = {AHD:.4f}")
+    st.success(f"Design Base Shear VBD,H = {VBD:.2f} kN")
 
     # -------------------------------------------------
     # PDF REPORT
     # -------------------------------------------------
-
     def generate_pdf():
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
         doc = SimpleDocTemplate(tmp.name, pagesize=A4,
                                 rightMargin=25*mm, leftMargin=25*mm,
                                 topMargin=25*mm, bottomMargin=25*mm)
+
         styles = getSampleStyleSheet()
         elems = []
 
-        elems.append(Paragraph("<b>IS 1893 (Part 1):2025 – Seismic Force Report</b>", styles["Title"]))
+        elems.append(Paragraph("<b>IS 1893 (Part 1):2025 – Base Shear Report</b>", styles["Title"]))
         elems.append(Spacer(1, 12))
 
-        table_data = [df.columns.tolist()] + df.round(2).values.tolist()
-        elems.append(Table(table_data, repeatRows=1))
+        data = [
+            ["Parameter", "Value"],
+            ["Structure Type", structure],
+            ["Seismic Zone", zone],
+            ["Zone Factor Z", Z],
+            ["Soil Type", soil],
+            ["Shear Wave Velocity Vs (m/s)", Vs],
+            ["Building Height h (m)", h],
+            ["Time Period T (s)", round(T, 3)],
+            ["Response Reduction Factor R", R],
+            ["Spectral Acceleration AₙH(T)", round(ANH, 3)],
+            ["Seismic Weight W (kN)", W],
+            ["Design Base Shear VBD,H (kN)", round(VBD, 2)]
+        ]
 
-        elems.append(Spacer(1, 12))
-        elems.append(Paragraph(
-            "Horizontal and vertical seismic forces distributed as per IS 1893. "
-            "Combined storey shear computed using SRSS interaction.",
-            styles["Italic"]
-        ))
+        elems.append(Table(data, colWidths=[70*mm, 80*mm]))
+        elems.append(Spacer(1, 15))
+
+        elems.append(Paragraph("Base shear calculated using equivalent static method "
+                               "as per IS 1893 (Part 1):2025.", styles["Italic"]))
 
         doc.build(elems)
         return tmp.name
@@ -197,7 +142,7 @@ if st.button("Compute Seismic Forces"):
         st.download_button(
             "Download PDF Report",
             f,
-            file_name="IS1893_2025_Seismic_Report.pdf",
+            file_name="IS1893_2025_Base_Shear_Report.pdf",
             mime="application/pdf"
         )
 
@@ -205,6 +150,6 @@ if st.button("Compute Seismic Forces"):
 # FOOTNOTE
 # -------------------------------------------------
 st.caption(
-    "Equivalent static method as per IS 1893 (Part 1):2025. "
-    "Dynamic analysis required for irregular or tall structures."
+    "Note: Applicable for regular buildings using equivalent static method. "
+    "Dynamic analysis is mandatory for irregular or tall structures."
 )
