@@ -8,7 +8,7 @@ from openpyxl import load_workbook
 from openpyxl.chart import LineChart, Reference
 
 # ==================================================
-# RESET BUTTON (FIXES ALL STUCK INPUT ERRORS)
+# RESET (DEVELOPER / USER SAFETY)
 # ==================================================
 if st.button("🔄 Reset all inputs"):
     st.session_state.clear()
@@ -22,12 +22,12 @@ st.set_page_config(page_title="IS 1893:2025 Seismic Calculator", layout="wide")
 st.title("IS 1893:2025 – Seismic Force Calculator")
 st.caption(
     "Equivalent Static Method | Direction-wise | Multi-Zone Capability\n\n"
-    "⚠️ For educational use only\n"
+    "⚠️ For Educational Use Only\n"
     "Created by: Vrushali Kamalakar"
 )
 
 # ==================================================
-# Z TABLE
+# Z TABLE (IS 1893:2025 – Reduced set for clarity)
 # ==================================================
 Z_TABLE = {
     "VI": {75:0.300,175:0.375,275:0.450,475:0.500},
@@ -40,15 +40,15 @@ Z_TABLE = {
 # ==================================================
 # SESSION STATE
 # ==================================================
-for k in ["base","storey","multi"]:
+for k in ["base","storey","multi","geometry_locked"]:
     if k not in st.session_state:
-        st.session_state[k] = None
+        st.session_state[k] = None if k != "geometry_locked" else False
 
 # ==================================================
 # FUNCTIONS
 # ==================================================
 def A_NH(T):
-    return 2.5 if T <= 0.4 else 1/T
+    return 2.5 if T <= 0.4 else 1 / T
 
 def plot_storey(df, col, title, fname):
     fig, ax = plt.subplots()
@@ -66,24 +66,24 @@ def plot_storey(df, col, title, fname):
 tab1, tab2, tab3 = st.tabs([
     "① Base Shear",
     "② Storey Forces & Diagrams",
-    "③ Multi-Zone Study & Export"
+    "③ Multi-Zone Study"
 ])
 
 # ==================================================
 # TAB 1 – BASE SHEAR
 # ==================================================
 with tab1:
-    zone = st.selectbox("Zone", list(Z_TABLE.keys()))
+    zone = st.selectbox("Earthquake Zone", list(Z_TABLE.keys()))
     TR = st.selectbox("Return Period (years)", list(Z_TABLE[zone].keys()))
     Z = Z_TABLE[zone][TR]
 
-    I = st.number_input("Importance Factor I", 1.0)
-    R = st.number_input("Response Reduction Factor R", 5.0)
-    W = st.number_input("Total Seismic Weight W (kN)", 10000.0)
+    I = st.number_input("Importance Factor I", value=1.0)
+    R = st.number_input("Response Reduction Factor R", value=5.0)
+    W = st.number_input("Total Seismic Weight W (kN)", value=10000.0)
 
-    H = st.number_input("Total Height H (m)", min_value=0.1, value=15.0, key="H")
-    dx = st.number_input("Plan Dimension dx (m)", min_value=0.1, value=10.0, key="dx")
-    dy = st.number_input("Plan Dimension dy (m)", min_value=0.1, value=8.6, key="dy")
+    H = st.number_input("Total Height H (m)", min_value=0.1, value=15.0)
+    dx = st.number_input("Plan Dimension dx (m)", min_value=0.1, value=10.0)
+    dy = st.number_input("Plan Dimension dy (m)", min_value=0.1, value=8.6)
 
     if st.button("Compute Base Shear"):
         Tx = 0.09 * H / math.sqrt(dx)
@@ -98,6 +98,8 @@ with tab1:
             "Vx":Vx,"Vy":Vy
         }
 
+        st.session_state.geometry_locked = True
+
         c1,c2,c3,c4 = st.columns(4)
         c1.metric("Tx (s)", f"{Tx:.3f}")
         c2.metric("Ty (s)", f"{Ty:.3f}")
@@ -105,12 +107,20 @@ with tab1:
         c4.metric("Vy (kN)", f"{Vy:.2f}")
 
 # ==================================================
-# TAB 2 – STOREY FORCES + DIAGRAMS
+# TAB 2 – STOREY FORCES & DIAGRAMS
 # ==================================================
 with tab2:
     if st.session_state.base is None:
-        st.warning("Compute base shear first.")
+        st.warning("Compute base shear in Tab ① first.")
     else:
+        if st.session_state.geometry_locked:
+            st.info("🔒 Storey geometry locked (Base shear computed).")
+
+        if st.button("🔓 Unlock Geometry"):
+            st.session_state.geometry_locked = False
+            st.session_state.base = None
+            st.warning("Geometry unlocked. Recompute base shear.")
+
         direction = st.selectbox("Direction", ["X","Y"])
         V = st.session_state.base["Vx"] if direction=="X" else st.session_state.base["Vy"]
 
@@ -119,10 +129,18 @@ with tab2:
         rows=[]
         for i in range(1, N+1):
             Wi = st.number_input(
-                f"W{i} (kN)", 2000.0, key=f"W_{direction}_{i}"
+                f"W{i} (kN)",
+                min_value=0.0,
+                value=float(2000.0),
+                key=f"W_{direction}_{i}",
+                disabled=st.session_state.geometry_locked
             )
             Hi = st.number_input(
-                f"H{i} (m)", min_value=0.1, value=3*i, key=f"H_{direction}_{i}"
+                f"H{i} (m)",
+                min_value=0.1,
+                value=float(3*i),
+                key=f"H_{direction}_{i}",
+                disabled=st.session_state.geometry_locked
             )
             rows.append([i,Wi,Hi])
 
@@ -140,11 +158,11 @@ with tab2:
         )
 
 # ==================================================
-# TAB 3 – MULTI-ZONE STUDY + EXPORT
+# TAB 3 – MULTI-ZONE STUDY
 # ==================================================
 with tab3:
     zones = st.multiselect("Zones", list(Z_TABLE.keys()), default=["II","III","IV"])
-    TR = st.selectbox("Return Period", [75,175,275,475], key="mzTR")
+    TR = st.selectbox("Return Period", [75,175,275,475])
 
     rows=[]
     for z in zones:
@@ -166,7 +184,7 @@ with tab3:
 # ==================================================
 # EXPORT ALL OUTPUTS
 # ==================================================
-st.header("📤 Export ALL Outputs (All Tabs)")
+st.header("📤 Export ALL Outputs")
 
 if st.session_state.storey is not None:
 
