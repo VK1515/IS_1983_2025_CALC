@@ -2,69 +2,61 @@ import streamlit as st
 import pandas as pd
 import math
 import matplotlib.pyplot as plt
+import os
+
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, Image
 from reportlab.lib.styles import getSampleStyleSheet
-from openpyxl import load_workbook
-from openpyxl.chart import LineChart, Reference
-
-# ==================================================
-# RESET (DEVELOPER / USER SAFETY)
-# ==================================================
-if st.button("🔄 Reset all inputs"):
-    st.session_state.clear()
-    st.experimental_rerun()
 
 # ==================================================
 # PAGE CONFIG
 # ==================================================
-st.set_page_config(page_title="IS 1893:2025 Seismic Calculator", layout="wide")
+st.set_page_config(
+    page_title="IS 1893:2025 Seismic Force Calculator",
+    layout="wide"
+)
 
 st.title("IS 1893:2025 – Seismic Force Calculator")
 st.caption(
     "Equivalent Static Method | Direction-wise | Multi-Zone Capability\n\n"
-    "⚠️ For Educational Use Only\n"
+    "⚠️ For Educational Use Only  \n"
     "Created by: Vrushali Kamalakar"
 )
 
 # ==================================================
-# Z TABLE (IS 1893:2025 – Reduced set for clarity)
+# SAFE RESET
+# ==================================================
+if st.button("🔄 Reset all inputs"):
+    st.session_state.clear()
+    st.rerun()
+
+# ==================================================
+# FULL Z TABLE (AS PER IS 1893:2025)
 # ==================================================
 Z_TABLE = {
-    "VI": {
-        75: 0.300, 175: 0.375, 275: 0.450, 475: 0.500,
-        975: 0.600, 1275: 0.625, 2475: 0.750, 4975: 0.940, 9975: 1.125
-    },
-    "V": {
-        75: 0.200, 175: 0.250, 275: 0.300, 475: 0.333,
-        975: 0.400, 1275: 0.4167, 2475: 0.500, 4975: 0.625, 9975: 0.750
-    },
-    "IV": {
-        75: 0.140, 175: 0.175, 275: 0.210, 475: 0.233,
-        975: 0.280, 1275: 0.2917, 2475: 0.350, 4975: 0.440, 9975: 0.525
-    },
-    "III": {
-        75: 0.0625, 175: 0.085, 275: 0.100, 475: 0.125,
-        975: 0.167, 1275: 0.1875, 2475: 0.250, 4975: 0.333, 9975: 0.450
-    },
-    "II": {
-        75: 0.0375, 175: 0.050, 275: 0.060, 475: 0.075,
-        975: 0.100, 1275: 0.1125, 2475: 0.150, 4975: 0.200, 9975: 0.270
-    }
+    "VI": {75:0.300,175:0.375,275:0.450,475:0.500,975:0.600,1275:0.625,2475:0.750,4975:0.940,9975:1.125},
+    "V":  {75:0.200,175:0.250,275:0.300,475:0.333,975:0.400,1275:0.4167,2475:0.500,4975:0.625,9975:0.750},
+    "IV": {75:0.140,175:0.175,275:0.210,475:0.233,975:0.280,1275:0.2917,2475:0.350,4975:0.440,9975:0.525},
+    "III":{75:0.0625,175:0.085,275:0.100,475:0.125,975:0.167,1275:0.1875,2475:0.250,4975:0.333,9975:0.450},
+    "II": {75:0.0375,175:0.050,275:0.060,475:0.075,975:0.100,1275:0.1125,2475:0.150,4975:0.200,9975:0.270}
 }
-
 
 # ==================================================
 # SESSION STATE
 # ==================================================
-for k in ["base","storey","multi","geometry_locked"]:
-    if k not in st.session_state:
-        st.session_state[k] = None if k != "geometry_locked" else False
+if "base" not in st.session_state:
+    st.session_state.base = None
+if "storey" not in st.session_state:
+    st.session_state.storey = None
+if "multi" not in st.session_state:
+    st.session_state.multi = None
+if "geometry_locked" not in st.session_state:
+    st.session_state.geometry_locked = False
 
 # ==================================================
 # FUNCTIONS
 # ==================================================
 def A_NH(T):
-    return 2.5 if T <= 0.4 else 1 / T
+    return 2.5 if T <= 0.4 else 1.0 / T
 
 def plot_storey(df, col, title, fname):
     fig, ax = plt.subplots()
@@ -76,11 +68,16 @@ def plot_storey(df, col, title, fname):
     fig.savefig(fname, dpi=300)
     st.pyplot(fig)
 
+def safe_image(path, w=400, h=250):
+    if os.path.exists(path):
+        return Image(path, w, h)
+    return None
+
 # ==================================================
 # TABS
 # ==================================================
 tab1, tab2, tab3 = st.tabs([
-    "① Base Shear",
+    "① Base Shear (X & Y)",
     "② Storey Forces & Diagrams",
     "③ Multi-Zone Study"
 ])
@@ -90,13 +87,18 @@ tab1, tab2, tab3 = st.tabs([
 # ==================================================
 with tab1:
     zone = st.selectbox("Earthquake Zone", list(Z_TABLE.keys()))
-    TR = st.selectbox("Return Period (years)", list(Z_TABLE[zone].keys()))
+    TR = st.selectbox(
+        "Return Period TR (years)",
+        [75,175,275,475,975,1275,2475,4975,9975]
+    )
     Z = Z_TABLE[zone][TR]
+    st.info(f"Zone Factor Z = {Z}")
 
     I = st.number_input("Importance Factor I", value=1.0)
     R = st.number_input("Response Reduction Factor R", value=5.0)
     W = st.number_input("Total Seismic Weight W (kN)", value=10000.0)
 
+    st.markdown("### Building Geometry")
     H = st.number_input("Total Height H (m)", min_value=0.1, value=15.0)
     dx = st.number_input("Plan Dimension dx (m)", min_value=0.1, value=10.0)
     dy = st.number_input("Plan Dimension dy (m)", min_value=0.1, value=8.6)
@@ -109,45 +111,47 @@ with tab1:
         Vy = Z * I * A_NH(Ty) / R * W
 
         st.session_state.base = {
-            "Zone":zone,"TR":TR,"Z":Z,
-            "Tx":Tx,"Ty":Ty,
-            "Vx":Vx,"Vy":Vy
+            "Zone": zone, "TR": TR, "Z": Z,
+            "Tx": Tx, "Ty": Ty,
+            "Vx": Vx, "Vy": Vy,
+            "W": W
         }
 
         st.session_state.geometry_locked = True
 
-        c1,c2,c3,c4 = st.columns(4)
+        c1, c2, c3, c4 = st.columns(4)
         c1.metric("Tx (s)", f"{Tx:.3f}")
         c2.metric("Ty (s)", f"{Ty:.3f}")
-        c3.metric("Vx (kN)", f"{Vx:.2f}")
-        c4.metric("Vy (kN)", f"{Vy:.2f}")
+        c3.metric("VBD,H,X (kN)", f"{Vx:.2f}")
+        c4.metric("VBD,H,Y (kN)", f"{Vy:.2f}")
 
 # ==================================================
-# TAB 2 – STOREY FORCES & DIAGRAMS
+# TAB 2 – STOREY FORCES
 # ==================================================
 with tab2:
     if st.session_state.base is None:
         st.warning("Compute base shear in Tab ① first.")
     else:
         if st.session_state.geometry_locked:
-            st.info("🔒 Storey geometry locked (Base shear computed).")
+            st.info("🔒 Storey geometry locked (Base shear already computed).")
 
-        if st.button("🔓 Unlock Geometry"):
+        if st.button("🔓 Unlock Geometry (Recompute Base Shear)"):
             st.session_state.geometry_locked = False
             st.session_state.base = None
-            st.warning("Geometry unlocked. Recompute base shear.")
+            st.warning("Geometry unlocked. Please recompute base shear.")
+            st.rerun()
 
-        direction = st.selectbox("Direction", ["X","Y"])
+        direction = st.selectbox("Horizontal Direction", ["X","Y"])
         V = st.session_state.base["Vx"] if direction=="X" else st.session_state.base["Vy"]
 
         N = st.number_input("Number of Storeys", min_value=1, value=5)
 
-        rows=[]
+        rows = []
         for i in range(1, N+1):
             Wi = st.number_input(
                 f"W{i} (kN)",
                 min_value=0.0,
-                value=float(2000.0),
+                value=float(st.session_state.base["W"]/N),
                 key=f"W_{direction}_{i}",
                 disabled=st.session_state.geometry_locked
             )
@@ -158,17 +162,19 @@ with tab2:
                 key=f"H_{direction}_{i}",
                 disabled=st.session_state.geometry_locked
             )
-            rows.append([i,Wi,Hi])
+            rows.append([i, Wi, Hi])
 
         df = pd.DataFrame(rows, columns=["Storey","Wi","Hi"])
-        df["WiHi²"] = df["Wi"]*df["Hi"]**2
-        df["Qi"] = df["WiHi²"]/df["WiHi²"].sum()*V
+        df["WiHi²"] = df["Wi"] * df["Hi"]**2
+        df["Qi"] = df["WiHi²"] / df["WiHi²"].sum() * V
         df["Storey Shear"] = df["Qi"][::-1].cumsum()[::-1]
 
         st.session_state.storey = df
         st.dataframe(df.round(3), use_container_width=True)
 
-        plot_storey(df,"Storey Shear",
+        plot_storey(
+            df,
+            "Storey Shear",
             f"Storey Shear Diagram ({direction})",
             f"storey_{direction}.png"
         )
@@ -177,17 +183,17 @@ with tab2:
 # TAB 3 – MULTI-ZONE STUDY
 # ==================================================
 with tab3:
-    zones = st.multiselect("Zones", list(Z_TABLE.keys()), default=["II","III","IV"])
-    TR = st.selectbox(
-    "Return Period TR (years)",
-    [75, 175, 275, 475, 975, 1275, 2475, 4975, 9975]
-)
+    zones = st.multiselect("Select Zones", list(Z_TABLE.keys()), default=["II","III","IV"])
+    TR_mz = st.selectbox(
+        "Return Period (years)",
+        [75,175,275,475,975,1275,2475,4975,9975],
+        key="mz_tr"
+    )
 
-
-    rows=[]
+    rows = []
     for z in zones:
-        Z = Z_TABLE[z][TR]
-        rows.append([z,Z,Z*10000])
+        Z = Z_TABLE[z][TR_mz]
+        rows.append([z, Z, Z*st.session_state.base["W"] if st.session_state.base else 0])
 
     dfz = pd.DataFrame(rows, columns=["Zone","Z","Base Shear (kN)"])
     st.session_state.multi = dfz
@@ -196,38 +202,49 @@ with tab3:
 
     fig, ax = plt.subplots()
     ax.plot(dfz["Zone"], dfz["Base Shear (kN)"], marker="o")
-    ax.set_title("Base Shear vs Zone")
+    ax.set_xlabel("Zone")
+    ax.set_ylabel("Base Shear (kN)")
+    ax.set_title("Base Shear Variation with Zone")
     ax.grid(True)
     fig.savefig("multi_zone.png", dpi=300)
     st.pyplot(fig)
 
 # ==================================================
-# EXPORT ALL OUTPUTS
+# EXPORT SECTION
 # ==================================================
-st.header("📤 Export ALL Outputs")
+st.markdown("---")
+st.header("📤 Export All Outputs")
 
 if st.session_state.storey is not None:
 
-    excel="IS1893_2025_FULL_OUTPUT.xlsx"
-    with pd.ExcelWriter(excel, engine="openpyxl") as w:
-        pd.DataFrame.from_dict(st.session_state.base,orient="index").to_excel(w,"Base_Shear")
-        st.session_state.storey.to_excel(w,"Storey_Forces",index=False)
-        st.session_state.multi.to_excel(w,"Multi_Zone",index=False)
+    excel_file = "IS1893_2025_All_Outputs.xlsx"
+    with pd.ExcelWriter(excel_file) as writer:
+        pd.DataFrame.from_dict(st.session_state.base, orient="index").to_excel(writer, "Base_Shear")
+        st.session_state.storey.to_excel(writer, "Storey_Forces", index=False)
+        if st.session_state.multi is not None:
+            st.session_state.multi.to_excel(writer, "Multi_Zone", index=False)
 
-    st.download_button("Download Excel (ALL OUTPUTS)", open(excel,"rb"), excel)
+    st.download_button("Download Excel (All Tabs)", open(excel_file, "rb"), excel_file)
 
-    pdf="IS1893_2025_FULL_OUTPUT.pdf"
-    doc=SimpleDocTemplate(pdf)
-    styles=getSampleStyleSheet()
+    pdf_file = "IS1893_2025_All_Outputs.pdf"
+    doc = SimpleDocTemplate(pdf_file)
+    styles = getSampleStyleSheet()
 
-    content=[
+    content = [
         Paragraph("IS 1893:2025 – Seismic Analysis Output", styles["Title"]),
-        Paragraph("For Educational Use Only<br/>Created by: Vrushali Kamalakar", styles["Normal"]),
-        Image("storey_X.png",400,250),
-        Image("storey_Y.png",400,250),
-        Image("multi_zone.png",400,250)
+        Paragraph("For Educational Use Only<br/>Created by: Vrushali Kamalakar", styles["Normal"])
     ]
+
+    for img in ["storey_X.png", "storey_Y.png", "multi_zone.png"]:
+        pic = safe_image(img)
+        if pic:
+            content.append(pic)
 
     doc.build(content)
 
-    st.download_button("Download PDF (ALL OUTPUTS)", open(pdf,"rb"), pdf)
+    st.download_button("Download PDF (All Tabs)", open(pdf_file, "rb"), pdf_file)
+
+st.info(
+    "📘 This application is intended strictly for educational and academic use. "
+    "Independent verification is mandatory for professional design."
+)
