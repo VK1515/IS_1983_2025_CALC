@@ -8,111 +8,31 @@ from reportlab.lib.styles import getSampleStyleSheet
 # PAGE CONFIG
 # --------------------------------------------------
 st.set_page_config(
-    page_title="IS 1893:2025 Seismic Force Calculator",
+    page_title="IS 1893:2025 Seismic Calculator",
     layout="wide"
 )
 
-st.title("IS 1893:2025 – Horizontal & Vertical Seismic Forces")
-st.subheader("Equivalent Static Method (Clauses 6, 8 & 8.2.4)")
+st.title("IS 1893:2025 – Seismic Force Calculator")
+st.caption("Equivalent Static Method | Base Shear → Storey-wise Distribution")
 
 # --------------------------------------------------
-# ZONE FACTOR TABLE (IS 1893:2025)
+# Z TABLE (IS 1893:2025)
 # --------------------------------------------------
 Z_TABLE = {
-    "VI": {
-        75: 0.300, 175: 0.375, 275: 0.450, 475: 0.500,
-        975: 0.600, 1275: 0.625, 2475: 0.750, 4975: 0.940, 9975: 1.125
-    },
-    "V": {
-        75: 0.200, 175: 0.250, 275: 0.300, 475: 0.333,
-        975: 0.400, 1275: 0.4167, 2475: 0.500, 4975: 0.625, 9975: 0.750
-    },
-    "IV": {
-        75: 0.140, 175: 0.175, 275: 0.210, 475: 0.233,
-        975: 0.280, 1275: 0.2917, 2475: 0.350, 4975: 0.440, 9975: 0.525
-    },
-    "III": {
-        75: 0.0625, 175: 0.085, 275: 0.100, 475: 0.125,
-        975: 0.167, 1275: 0.1875, 2475: 0.250, 4975: 0.333, 9975: 0.450
-    },
-    "II": {
-        75: 0.0375, 175: 0.050, 275: 0.060, 475: 0.075,
-        975: 0.100, 1275: 0.1125, 2475: 0.150, 4975: 0.200, 9975: 0.270
-    }
+    "VI": {75:0.300,175:0.375,275:0.450,475:0.500,975:0.600,1275:0.625,2475:0.750,4975:0.940,9975:1.125},
+    "V":  {75:0.200,175:0.250,275:0.300,475:0.333,975:0.400,1275:0.4167,2475:0.500,4975:0.625,9975:0.750},
+    "IV": {75:0.140,175:0.175,275:0.210,475:0.233,975:0.280,1275:0.2917,2475:0.350,4975:0.440,9975:0.525},
+    "III":{75:0.0625,175:0.085,275:0.100,475:0.125,975:0.167,1275:0.1875,2475:0.250,4975:0.333,9975:0.450},
+    "II": {75:0.0375,175:0.050,275:0.060,475:0.075,975:0.100,1275:0.1125,2475:0.150,4975:0.200,9975:0.270}
 }
 
 # --------------------------------------------------
-# BASIC SEISMIC INPUTS
+# SESSION STATE INIT
 # --------------------------------------------------
-st.markdown("## Design Earthquake Parameters")
-
-zone = st.selectbox(
-    "Earthquake Zone",
-    ["II", "III", "IV", "V", "VI"]
-)
-
-return_period = st.selectbox(
-    "Return Period TR (years)",
-    [75, 175, 275, 475, 975, 1275, 2475, 4975, 9975]
-)
-
-Z = Z_TABLE[zone][return_period]
-
-st.info(f"Selected Design Zone Factor Z = {Z}")
-
-I = st.number_input("Importance Factor (I)", value=1.0, step=0.1)
-R = st.number_input("Response Reduction Factor (R)", value=5.0, step=0.5)
-site = st.selectbox("Site Class", ["A/B", "C", "D"])
-
-W_total = st.number_input("Total Seismic Weight W (kN)", value=10000.0)
-
-# --------------------------------------------------
-# APPROXIMATE FUNDAMENTAL PERIOD
-# --------------------------------------------------
-st.markdown("## Approximate Fundamental Period for Horizontal Action")
-
-use_Ta = st.checkbox(
-    "Use Ta = 0.09 H / √d (IS 1893:2025)",
-    value=True
-)
-
-H_total = st.number_input("Total Building Height H (m)", value=15.0)
-d_base = st.number_input("Base Dimension d (m)", value=10.0)
-
-T_H_manual = st.number_input(
-    "Manual Horizontal Period TH (s)",
-    value=1.0
-)
-
-T_V = st.number_input("Vertical Natural Period TV (s)", value=0.4)
-
-T_H_used = 0.09 * H_total / math.sqrt(d_base) if use_Ta else T_H_manual
-
-# --------------------------------------------------
-# STOREY DATA
-# --------------------------------------------------
-st.markdown("## Storey Data")
-
-N = st.number_input("Number of Storeys", min_value=1, value=5)
-
-storey_data = []
-for i in range(1, N + 1):
-    c1, c2 = st.columns(2)
-    with c1:
-        Wi = st.number_input(
-            f"W{i} – Seismic Weight (kN)",
-            value=W_total / N,
-            key=f"W{i}"
-        )
-    with c2:
-        Hi = st.number_input(
-            f"H{i} – Height from Base (m)",
-            value=3.0 * i,
-            key=f"H{i}"
-        )
-    storey_data.append([i, Wi, Hi])
-
-df = pd.DataFrame(storey_data, columns=["Storey", "Wi (kN)", "Hi (m)"])
+if "V_BD_H" not in st.session_state:
+    st.session_state.V_BD_H = None
+    st.session_state.V_BD_V = None
+    st.session_state.W_total = None
 
 # --------------------------------------------------
 # SPECTRAL FUNCTIONS
@@ -127,89 +47,94 @@ def A_NH(TH, site):
 def delta_v(TV, site):
     if TV > 0.10:
         return 0.67
-    return {"A/B": 0.80, "C": 0.82, "D": 0.85}[site]
+    return {"A/B":0.80,"C":0.82,"D":0.85}[site]
 
 def gamma_v(TV, site):
-    return {"A/B": 1/TV, "C": 1.5/TV, "D": 2.0/TV}[site]
+    return {"A/B":1/TV,"C":1.5/TV,"D":2/TV}[site]
 
 # --------------------------------------------------
-# BASE SHEAR
+# TABS
 # --------------------------------------------------
-A_HD = (Z * I * A_NH(T_H_used, site)) / R
-V_BD_H = A_HD * W_total
+tab1, tab2 = st.tabs(["① Base Shear Calculation", "② Storey-wise Force Distribution"])
 
-A_NV = delta_v(T_V, site) * gamma_v(T_V, site)
-V_BD_V = Z * I * A_NV * W_total
+# ==================================================
+# TAB 1 – BASE SHEAR
+# ==================================================
+with tab1:
+    st.subheader("Base Shear Calculation")
 
-# --------------------------------------------------
-# FLOOR-WISE DISTRIBUTION
-# --------------------------------------------------
-df["WiHi²"] = df["Wi (kN)"] * df["Hi (m)"]**2
+    zone = st.selectbox("Earthquake Zone", ["II","III","IV","V","VI"])
+    TR = st.selectbox("Return Period TR (years)", [75,175,275,475,975,1275,2475,4975,9975])
+    Z = Z_TABLE[zone][TR]
 
-df["QDi,H (kN)"] = df["WiHi²"] / df["WiHi²"].sum() * V_BD_H
-df["VDi,H (kN)"] = df["QDi,H (kN)"][::-1].cumsum()[::-1]
+    st.info(f"Design Zone Factor Z = {Z}")
 
-df["QDi,V (kN)"] = df["Wi (kN)"] / df["Wi (kN)"].sum() * V_BD_V
-df["VDi,V (kN)"] = df["QDi,V (kN)"][::-1].cumsum()[::-1]
+    I = st.number_input("Importance Factor (I)", value=1.0)
+    R = st.number_input("Response Reduction Factor (R)", value=5.0)
+    site = st.selectbox("Site Class", ["A/B","C","D"])
 
-# --------------------------------------------------
-# RESULTS
-# --------------------------------------------------
-st.markdown("## Results Summary")
+    W_total = st.number_input("Total Seismic Weight W (kN)", value=10000.0)
 
-c1, c2, c3 = st.columns(3)
-with c1:
-    st.metric("Z (from Zone & TR)", Z)
-with c2:
-    st.metric("Horizontal Base Shear (kN)", f"{V_BD_H:.2f}")
-with c3:
-    st.metric("Vertical Base Shear (kN)", f"{V_BD_V:.2f}")
+    st.markdown("#### Approximate Fundamental Period (Horizontal)")
+    use_Ta = st.checkbox("Use Ta = 0.09H / √d", value=True)
 
-st.markdown("## Floor-wise Seismic Force Distribution")
-st.dataframe(df.round(3), use_container_width=True)
+    H = st.number_input("Total Height H (m)", value=15.0)
+    d = st.number_input("Base Dimension d (m)", value=10.0)
+    TH_manual = st.number_input("Manual TH (s)", value=1.0)
 
-# --------------------------------------------------
-# EXPORT
-# --------------------------------------------------
-excel_file = "IS1893_2025_Seismic_Forces.xlsx"
-df.to_excel(excel_file, index=False)
+    TV = st.number_input("Vertical Period TV (s)", value=0.4)
 
-st.download_button(
-    "Download Excel",
-    data=open(excel_file, "rb"),
-    file_name=excel_file
-)
+    TH = 0.09*H/math.sqrt(d) if use_Ta else TH_manual
 
-pdf_file = "IS1893_2025_Seismic_Forces.pdf"
-doc = SimpleDocTemplate(pdf_file)
-styles = getSampleStyleSheet()
+    if st.button("Compute Base Shear"):
+        A_HD = (Z * I * A_NH(TH, site)) / R
+        V_BD_H = A_HD * W_total
 
-content = [
-    Paragraph("IS 1893:2025 – Seismic Force Distribution", styles["Title"]),
-    Paragraph(
-        f"Zone = {zone}<br/>"
-        f"Return Period TR = {return_period} years<br/>"
-        f"Zone Factor Z = {Z}<br/>"
-        f"Horizontal Base Shear = {V_BD_H:.2f} kN<br/>"
-        f"Vertical Base Shear = {V_BD_V:.2f} kN",
-        styles["Normal"]
-    ),
-    Table([df.columns.tolist()] + df.round(3).values.tolist())
-]
+        A_NV = delta_v(TV, site) * gamma_v(TV, site)
+        V_BD_V = Z * I * A_NV * W_total
 
-doc.build(content)
+        st.session_state.V_BD_H = V_BD_H
+        st.session_state.V_BD_V = V_BD_V
+        st.session_state.W_total = W_total
 
-st.download_button(
-    "Download PDF",
-    data=open(pdf_file, "rb"),
-    file_name=pdf_file
-)
+        st.success("Base shear computed and locked.")
 
-st.info(
-    "IS 1893:2025 Compliance:\n"
-    "- Z selected using Zone + Return Period table\n"
-    "- Horizontal action uses R\n"
-    "- Vertical action independent of R\n"
-    "- Horizontal distribution: Wi·Hi²\n"
-    "- Vertical distribution: Wi"
-)
+        c1, c2 = st.columns(2)
+        with c1:
+            st.metric("Horizontal Base Shear (kN)", f"{V_BD_H:.2f}")
+        with c2:
+            st.metric("Vertical Base Shear (kN)", f"{V_BD_V:.2f}")
+
+# ==================================================
+# TAB 2 – STOREY DISTRIBUTION
+# ==================================================
+with tab2:
+    st.subheader("Storey-wise Seismic Force Distribution")
+
+    if st.session_state.V_BD_H is None:
+        st.warning("Please compute base shear in Tab ① first.")
+    else:
+        V_BD_H = st.session_state.V_BD_H
+        V_BD_V = st.session_state.V_BD_V
+
+        N = st.number_input("Number of Storeys", min_value=1, value=5)
+
+        storey_data = []
+        for i in range(1, N+1):
+            c1, c2 = st.columns(2)
+            with c1:
+                Wi = st.number_input(f"W{i} (kN)", value=st.session_state.W_total/N, key=f"Wi{i}")
+            with c2:
+                Hi = st.number_input(f"H{i} (m)", value=3*i, key=f"Hi{i}")
+            storey_data.append([i, Wi, Hi])
+
+        df = pd.DataFrame(storey_data, columns=["Storey","Wi (kN)","Hi (m)"])
+        df["WiHi²"] = df["Wi (kN)"] * df["Hi (m)"]**2
+
+        df["QDi,H (kN)"] = df["WiHi²"] / df["WiHi²"].sum() * V_BD_H
+        df["VDi,H (kN)"] = df["QDi,H (kN)"][::-1].cumsum()[::-1]
+
+        df["QDi,V (kN)"] = df["Wi (kN)"] / df["Wi (kN)"].sum() * V_BD_V
+        df["VDi,V (kN)"] = df["QDi,V (kN)"][::-1].cumsum()[::-1]
+
+        st.dataframe(df.round(3), use_container_width=True)
