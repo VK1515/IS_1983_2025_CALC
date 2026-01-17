@@ -36,6 +36,8 @@ Z_TABLE = {
 # ==================================================
 # SESSION STATE
 # ==================================================
+if "base_shear" not in st.session_state:
+    st.session_state.base_shear = {}
 if "multi_zone_df" not in st.session_state:
     st.session_state.multi_zone_df = None
 
@@ -49,105 +51,176 @@ def A_NH(T, site):
         return 2.5 if T <= 0.6 else (1.5/T if T <= 6 else 9/T**2)
     return 2.5 if T <= 0.8 else (2/T if T <= 6 else 12/T**2)
 
+def delta_v(T, site):
+    if T > 0.10:
+        return 0.67
+    return {"A/B":0.80, "C":0.82, "D":0.85}[site]
+
+def gamma_v(T, site):
+    return {"A/B":1/T, "C":1.5/T, "D":2.0/T}[site]
+
 # ==================================================
-# TAB – MULTI-ZONE STUDY
+# TABS
 # ==================================================
-st.header("Multi-Zone Base Shear Comparison (with Export)")
+tab1, tab2, tab3 = st.tabs([
+    "① Base Shear (X & Y)",
+    "② Storey-wise Distribution",
+    "③ Multi-Zone Study & Export"
+])
 
-zones = st.multiselect("Select Zones", ["II","III","IV","V","VI"], default=["II","III","IV","V"])
-TR = st.selectbox("Return Period (years)", [75,175,275,475,975,1275,2475,4975,9975])
-I = st.number_input("Importance Factor (I)", value=1.0)
-R = st.number_input("Response Reduction Factor (R)", value=5.0)
-site = st.selectbox("Site Class", ["A/B","C","D"])
-W = st.number_input("Total Seismic Weight W (kN)", value=10000.0)
-H = st.number_input("Total Height H (m)", value=15.0)
-dx = st.number_input("Plan Dimension dx (m)", value=10.0)
-dy = st.number_input("Plan Dimension dy (m)", value=15.0)
+# ==================================================
+# TAB 1 – BASE SHEAR
+# ==================================================
+with tab1:
+    st.subheader("Direction-wise Base Shear Calculation")
 
-if st.button("Compute Multi-Zone Base Shear"):
-    Tx = 0.09 * H / math.sqrt(dx)
-    Ty = 0.09 * H / math.sqrt(dy)
+    zone = st.selectbox("Earthquake Zone", ["II","III","IV","V","VI"])
+    TR = st.selectbox("Return Period TR (years)", [75,175,275,475,975,1275,2475,4975,9975])
+    Z = Z_TABLE[zone][TR]
 
-    rows = []
-    for z in zones:
-        Z = Z_TABLE[z][TR]
+    I = st.number_input("Importance Factor (I)", value=1.0)
+    R = st.number_input("Response Reduction Factor (R)", value=5.0)
+    site = st.selectbox("Site Class", ["A/B","C","D"])
+    W = st.number_input("Total Seismic Weight W (kN)", value=10000.0)
+
+    H = st.number_input("Total Height H (m)", value=15.0)
+    dx = st.number_input("Plan Dimension dx (m)", value=10.0)
+    dy = st.number_input("Plan Dimension dy (m)", value=15.0)
+    TV = st.number_input("Vertical Period TV (s)", value=0.4)
+
+    if st.button("Compute Base Shear"):
+        Tx = 0.09 * H / math.sqrt(dx)
+        Ty = 0.09 * H / math.sqrt(dy)
+
         Vx = (Z * I * A_NH(Tx, site) / R) * W
         Vy = (Z * I * A_NH(Ty, site) / R) * W
-        rows.append([z, Z, Vx, Vy])
+        Vv = Z * I * delta_v(TV, site) * gamma_v(TV, site) * W
 
-    dfz = pd.DataFrame(rows, columns=["Zone","Z","Vx (kN)","Vy (kN)"])
-    st.session_state.multi_zone_df = dfz
+        st.session_state.base_shear = {
+            "Zone":zone,"TR":TR,"Z":Z,
+            "I":I,"R":R,"Site":site,
+            "W":W,"Tx":Tx,"Ty":Ty,
+            "Vx":Vx,"Vy":Vy,"Vv":Vv
+        }
 
-    st.dataframe(dfz.round(3), use_container_width=True)
+        st.success("Base shear computed and locked.")
 
-    # -------- GRAPH --------
-    fig, ax = plt.subplots()
-    ax.plot(dfz["Zone"], dfz["Vx (kN)"], marker="o", label="X direction")
-    ax.plot(dfz["Zone"], dfz["Vy (kN)"], marker="s", label="Y direction")
-    ax.set_xlabel("Seismic Zone")
-    ax.set_ylabel("Base Shear (kN)")
-    ax.set_title("Base Shear Variation with Seismic Zone")
-    ax.grid(True)
-    ax.legend()
-    st.pyplot(fig)
-
-    fig.savefig("base_shear_zone.png", dpi=300)
+        c1,c2,c3,c4,c5 = st.columns(5)
+        with c1: st.metric("Tx (s)", f"{Tx:.3f}")
+        with c2: st.metric("Ty (s)", f"{Ty:.3f}")
+        with c3: st.metric("Vx (kN)", f"{Vx:.2f}")
+        with c4: st.metric("Vy (kN)", f"{Vy:.2f}")
+        with c5: st.metric("Vv (kN)", f"{Vv:.2f}")
 
 # ==================================================
-# EXPORT SECTION
+# TAB 2 – STOREY DISTRIBUTION
 # ==================================================
-if st.session_state.multi_zone_df is not None:
-    dfz = st.session_state.multi_zone_df
+with tab2:
+    st.subheader("Storey-wise Seismic Force Distribution")
 
-    # ---------------- EXCEL EXPORT ----------------
-    excel_file = "IS1893_2025_Base_Shear_With_Graph.xlsx"
-    dfz.to_excel(excel_file, index=False)
+    if not st.session_state.base_shear:
+        st.warning("Compute base shear in Tab ① first.")
+    else:
+        direction = st.selectbox("Horizontal Direction", ["X","Y"])
+        Vh = st.session_state.base_shear["Vx"] if direction=="X" else st.session_state.base_shear["Vy"]
+        Vv = st.session_state.base_shear["Vv"]
+        W = st.session_state.base_shear["W"]
 
-    wb = load_workbook(excel_file)
-    ws = wb.active
+        N = st.number_input("Number of Storeys", min_value=1, value=5)
 
-    chart = LineChart()
-    chart.title = "Base Shear vs Seismic Zone"
-    chart.y_axis.title = "Base Shear (kN)"
-    chart.x_axis.title = "Zone"
+        rows=[]
+        for i in range(1,N+1):
+            Wi = st.number_input(f"W{i} (kN)", value=W/N, key=f"W{i}")
+            Hi = st.number_input(f"H{i} (m)", value=3*i, key=f"H{i}")
+            rows.append([i,Wi,Hi])
 
-    data = Reference(ws, min_col=3, min_row=1, max_col=4, max_row=ws.max_row)
-    cats = Reference(ws, min_col=1, min_row=2, max_row=ws.max_row)
-    chart.add_data(data, titles_from_data=True)
-    chart.set_categories(cats)
-    ws.add_chart(chart, "G2")
+        df = pd.DataFrame(rows, columns=["Storey","Wi (kN)","Hi (m)"])
+        df["WiHi²"]=df["Wi (kN)"]*df["Hi (m)"]**2
+        df["QDi,H"]=df["WiHi²"]/df["WiHi²"].sum()*Vh
+        df["VDi,H"]=df["QDi,H"][::-1].cumsum()[::-1]
+        df["QDi,V"]=df["Wi (kN)"]/df["Wi (kN)"].sum()*Vv
+        df["VDi,V"]=df["QDi,V"][::-1].cumsum()[::-1]
 
-    wb.save(excel_file)
+        st.dataframe(df.round(3), use_container_width=True)
 
-    st.download_button(
-        "📥 Download Excel (with graph)",
-        open(excel_file, "rb"),
-        file_name=excel_file
-    )
+# ==================================================
+# TAB 3 – MULTI-ZONE STUDY + EXPORT
+# ==================================================
+with tab3:
+    st.subheader("Multi-Zone Base Shear Comparison")
 
-    # ---------------- PDF EXPORT ----------------
-    pdf_file = "IS1893_2025_Base_Shear_With_Graph.pdf"
-    doc = SimpleDocTemplate(pdf_file)
-    styles = getSampleStyleSheet()
+    zones = st.multiselect("Select Zones", ["II","III","IV","V","VI"], default=["II","III","IV","V"])
+    TR = st.selectbox("Return Period (years)", [75,175,275,475,975,1275,2475,4975,9975], key="mz_tr")
+    I = st.number_input("Importance Factor", value=1.0, key="mz_I")
+    R = st.number_input("Response Reduction Factor", value=5.0, key="mz_R")
+    site = st.selectbox("Site Class", ["A/B","C","D"], key="mz_site")
+    W = st.number_input("Total Weight W (kN)", value=10000.0, key="mz_W")
+    H = st.number_input("Height H (m)", value=15.0, key="mz_H")
+    dx = st.number_input("dx (m)", value=10.0, key="mz_dx")
+    dy = st.number_input("dy (m)", value=15.0, key="mz_dy")
 
-    content = [
-        Paragraph("IS 1893:2025 – Multi-Zone Base Shear Study", styles["Title"]),
-        Paragraph(
-            "For educational use only<br/>"
-            "Created by: Vrushali Kamalakar",
-            styles["Normal"]
-        ),
-        Table([dfz.columns.tolist()] + dfz.round(3).values.tolist()),
-        Image("base_shear_zone.png", width=400, height=250)
-    ]
+    if st.button("Compute Multi-Zone Base Shear"):
+        Tx = 0.09 * H / math.sqrt(dx)
+        Ty = 0.09 * H / math.sqrt(dy)
 
-    doc.build(content)
+        data=[]
+        for z in zones:
+            Z = Z_TABLE[z][TR]
+            data.append([z,Z,(Z*I*A_NH(Tx,site)/R)*W,(Z*I*A_NH(Ty,site)/R)*W])
 
-    st.download_button(
-        "📥 Download PDF (with graph)",
-        open(pdf_file, "rb"),
-        file_name=pdf_file
-    )
+        dfz = pd.DataFrame(data, columns=["Zone","Z","Vx (kN)","Vy (kN)"])
+        st.session_state.multi_zone_df = dfz
+
+        st.dataframe(dfz.round(3), use_container_width=True)
+
+        fig, ax = plt.subplots()
+        ax.plot(dfz["Zone"], dfz["Vx (kN)"], marker="o", label="X direction")
+        ax.plot(dfz["Zone"], dfz["Vy (kN)"], marker="s", label="Y direction")
+        ax.set_xlabel("Seismic Zone")
+        ax.set_ylabel("Base Shear (kN)")
+        ax.set_title("Base Shear vs Seismic Zone")
+        ax.grid(True)
+        ax.legend()
+        st.pyplot(fig)
+
+        fig.savefig("base_shear_zone.png", dpi=300)
+
+    # ---------------- EXPORT ----------------
+    if st.session_state.multi_zone_df is not None:
+        dfz = st.session_state.multi_zone_df
+
+        # Excel
+        excel_file="IS1893_2025_BaseShear_MultiZone.xlsx"
+        dfz.to_excel(excel_file,index=False)
+        wb=load_workbook(excel_file)
+        ws=wb.active
+
+        chart=LineChart()
+        chart.title="Base Shear vs Zone"
+        chart.y_axis.title="Base Shear (kN)"
+        chart.x_axis.title="Zone"
+        data=Reference(ws,min_col=3,min_row=1,max_col=4,max_row=ws.max_row)
+        cats=Reference(ws,min_col=1,min_row=2,max_row=ws.max_row)
+        chart.add_data(data,titles_from_data=True)
+        chart.set_categories(cats)
+        ws.add_chart(chart,"G2")
+        wb.save(excel_file)
+
+        st.download_button("Download Excel (with graph)", open(excel_file,"rb"), file_name=excel_file)
+
+        # PDF
+        pdf_file="IS1893_2025_BaseShear_MultiZone.pdf"
+        doc=SimpleDocTemplate(pdf_file)
+        styles=getSampleStyleSheet()
+        content=[
+            Paragraph("IS 1893:2025 – Multi-Zone Base Shear Study", styles["Title"]),
+            Paragraph("For educational use only<br/>Created by: Vrushali Kamalakar", styles["Normal"]),
+            Table([dfz.columns.tolist()]+dfz.round(3).values.tolist()),
+            Image("base_shear_zone.png", width=400, height=250)
+        ]
+        doc.build(content)
+
+        st.download_button("Download PDF (with graph)", open(pdf_file,"rb"), file_name=pdf_file)
 
 # ==================================================
 # FOOTER
