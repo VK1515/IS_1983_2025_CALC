@@ -253,7 +253,7 @@ with tab3:
             "Download PDF (Base Shear + Multi-Zone)",
             open(pdf_file, "rb"),
             file_name=pdf_file
-
+        )
             # ==================================================
 # FOOTER
 # ==================================================
