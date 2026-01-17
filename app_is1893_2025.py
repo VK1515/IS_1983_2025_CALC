@@ -18,8 +18,8 @@ st.set_page_config(
 st.title("IS 1893:2025 – Seismic Force Calculator")
 st.caption(
     "Equivalent Static Method | Direction-wise | Multi-Zone Capability\n\n"
-    "⚠️ For educational use only  \n"
-    "Created by: Vrushali Kamalakar"
+    "⚠️ **For educational use only**  \n"
+    "**Created by: Vrushali Kamalakar**"
 )
 
 # ==================================================
@@ -52,7 +52,7 @@ def A_NH(T, site):
 # ==================================================
 # TAB – MULTI-ZONE STUDY
 # ==================================================
-st.header("Multi-Zone Base Shear Study with Export")
+st.header("Multi-Zone Base Shear Comparison (with Export)")
 
 zones = st.multiselect("Select Zones", ["II","III","IV","V","VI"], default=["II","III","IV","V"])
 TR = st.selectbox("Return Period (years)", [75,175,275,475,975,1275,2475,4975,9975])
@@ -60,9 +60,9 @@ I = st.number_input("Importance Factor (I)", value=1.0)
 R = st.number_input("Response Reduction Factor (R)", value=5.0)
 site = st.selectbox("Site Class", ["A/B","C","D"])
 W = st.number_input("Total Seismic Weight W (kN)", value=10000.0)
-H = st.number_input("Height H (m)", value=15.0)
-dx = st.number_input("Plan dimension dx (m)", value=10.0)
-dy = st.number_input("Plan dimension dy (m)", value=15.0)
+H = st.number_input("Total Height H (m)", value=15.0)
+dx = st.number_input("Plan Dimension dx (m)", value=10.0)
+dy = st.number_input("Plan Dimension dy (m)", value=15.0)
 
 if st.button("Compute Multi-Zone Base Shear"):
     Tx = 0.09 * H / math.sqrt(dx)
@@ -75,18 +75,18 @@ if st.button("Compute Multi-Zone Base Shear"):
         Vy = (Z * I * A_NH(Ty, site) / R) * W
         rows.append([z, Z, Vx, Vy])
 
-    dfz = pd.DataFrame(rows, columns=["Zone", "Z", "Vx (kN)", "Vy (kN)"])
+    dfz = pd.DataFrame(rows, columns=["Zone","Z","Vx (kN)","Vy (kN)"])
     st.session_state.multi_zone_df = dfz
 
     st.dataframe(dfz.round(3), use_container_width=True)
 
-    # -------- PLOT --------
+    # -------- GRAPH --------
     fig, ax = plt.subplots()
     ax.plot(dfz["Zone"], dfz["Vx (kN)"], marker="o", label="X direction")
     ax.plot(dfz["Zone"], dfz["Vy (kN)"], marker="s", label="Y direction")
     ax.set_xlabel("Seismic Zone")
     ax.set_ylabel("Base Shear (kN)")
-    ax.set_title("Base Shear vs Seismic Zone")
+    ax.set_title("Base Shear Variation with Seismic Zone")
     ax.grid(True)
     ax.legend()
     st.pyplot(fig)
@@ -97,10 +97,9 @@ if st.button("Compute Multi-Zone Base Shear"):
 # EXPORT SECTION
 # ==================================================
 if st.session_state.multi_zone_df is not None:
-
     dfz = st.session_state.multi_zone_df
 
-    # -------- EXCEL EXPORT --------
+    # ---------------- EXCEL EXPORT ----------------
     excel_file = "IS1893_2025_Base_Shear_With_Graph.xlsx"
     dfz.to_excel(excel_file, index=False)
 
@@ -126,7 +125,7 @@ if st.session_state.multi_zone_df is not None:
         file_name=excel_file
     )
 
-    # -------- PDF EXPORT --------
+    # ---------------- PDF EXPORT ----------------
     pdf_file = "IS1893_2025_Base_Shear_With_Graph.pdf"
     doc = SimpleDocTemplate(pdf_file)
     styles = getSampleStyleSheet()
@@ -155,7 +154,7 @@ if st.session_state.multi_zone_df is not None:
 # ==================================================
 st.markdown("---")
 st.info(
-    "📘 For educational use only. "
-    "Independent verification is mandatory before professional use.\n\n"
-    "Created by: Vrushali Kamalakar"
+    "📘 **For Educational Use Only**\n\n"
+    "Independent verification is mandatory before professional or statutory use.\n\n"
+    "**Created by: Vrushali Kamalakar**"
 )
