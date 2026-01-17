@@ -214,6 +214,67 @@ with tab2:
         fig3.savefig("storey_shear_XY.png", dpi=300)
 
 
+# ==================================================
+# PDF EXPORT (TAB ② – NO os USED)
+# ==================================================
+st.markdown("---")
+st.subheader("Export Storey-wise Results (PDF)")
+
+if st.button("Generate PDF Report"):
+    if not st.session_state.base_shear or st.session_state.storey_df is None:
+        st.error("Please complete base shear and storey distribution first.")
+    else:
+        df_base = build_base_shear_df()
+        df_storey = st.session_state.storey_df
+
+        pdf_file = "IS1893_2025_Seismic_Report.pdf"
+        styles = getSampleStyleSheet()
+        doc = SimpleDocTemplate(pdf_file)
+
+        content = [
+            Paragraph("IS 1893:2025 – Seismic Analysis Report", styles["Title"]),
+            Paragraph(
+                "Equivalent Static Method<br/>"
+                "For Educational Use Only<br/>"
+                "Created by: Vrushali Kamalakar",
+                styles["Normal"]
+            ),
+
+            Paragraph("<b>Base Shear Summary</b>", styles["Heading2"]),
+            Table([df_base.columns.tolist()] + df_base.values.tolist()),
+
+            Paragraph("<b>Storey-wise Seismic Force Distribution</b>", styles["Heading2"]),
+            Table([df_storey.columns.tolist()] + df_storey.round(3).values.tolist()),
+
+            Paragraph("<b>Storey Shear Diagrams</b>", styles["Heading2"]),
+        ]
+
+        # -------- Safely attempt to add plots (NO os) --------
+        plot_files = [
+            "storey_shear_X.png",
+            "storey_shear_Y.png",
+            "storey_shear_vertical.png",
+            "storey_shear_XY.png",
+        ]
+
+        for plot in plot_files:
+            try:
+                content.append(Image(plot, width=420, height=300))
+            except:
+                pass  # silently skip missing plots
+
+        doc.build(content)
+
+        st.success("PDF report generated successfully.")
+        st.download_button(
+            "Download PDF",
+            open(pdf_file, "rb"),
+            file_name=pdf_file
+        )
+
+
+
+
 
 # ==================================================
 # TAB 3 – MULTI-ZONE STUDY + EXPORT
@@ -303,9 +364,4 @@ st.info(
     "Independent verification is mandatory before professional or statutory use.\n\n"
     "**Created by: Vrushali Kamalakar**"
 )
-
-
-
-
-
 
