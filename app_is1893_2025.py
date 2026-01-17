@@ -22,64 +22,58 @@ STRUCTURE_R_T = {
 # -------------------------------------------------
 # FUNCTIONS
 # -------------------------------------------------
-def classify_site(Vs):
-    if Vs >= 760:
-        return "A"
-    elif Vs >= 360:
-        return "C"
-    else:
-        return "D"
+def classify_soil(Vs):
+    if Vs >= 760: return "Hard"
+    elif Vs >= 360: return "Medium"
+    else: return "Soft"
 
 def time_period(h, c):
     return c * h**0.75
 
-def A_NH(T, site):
-    if site in ["A","B"]:
+def Sa_static(T, soil):
+    if soil in ["Hard","Medium"]:
         return 2.5 if T <= 0.4 else 1/T
-    elif site == "C":
-        return 2.5 if T <= 0.6 else 1.5/T
     else:
-        return 2.5 if T <= 0.8 else 2.0/T
-
-def delta_v(Tv):
-    return 0.67 if Tv > 0.10 else 0.80
-
-def A_NV(Tv, site):
-    dv = delta_v(Tv)
-    if site in ["A","B"]:
-        Sa = 2.5 if Tv <= 0.4 else 1/Tv
-    elif site == "C":
-        Sa = 2.5 if Tv <= 0.6 else 1.5/Tv
-    else:
-        Sa = 2.5 if Tv <= 0.8 else 2.0/Tv
-    return dv * Sa
+        return 3.0 if T <= 0.6 else 1.8/T
 
 # -------------------------------------------------
-# STREAMLIT UI
+# UI
 # -------------------------------------------------
 st.set_page_config("IS 1893 Seismic Forces", layout="wide")
-st.title("IS 1893:2025 – Seismic Force Calculator")
+st.title("IS 1893 – Seismic Force Calculator with Storey Distribution")
 
-st.markdown("**Equivalent Static Method with Horizontal & Vertical Effects**")
-
-# ---------------- Inputs ----------------
 structure = st.selectbox("Structure Type", STRUCTURE_R_T.keys())
 zone = st.selectbox("Seismic Zone", ZONE_FACTOR.keys())
 
 Vs = st.number_input("Shear Wave Velocity Vs (m/s)", 50.0, 400.0)
-h_total = st.number_input("Total Building Height h (m)", 3.0, 30.0)
+h_total = st.number_input("Total Height h (m)", 3.0, 30.0)
 W_total = st.number_input("Total Seismic Weight W (kN)", 0.0, 10000.0)
 
-VBD_V_factor = st.number_input("Vertical seismic weight factor (×W)", value=1.0)
+VBD_V = st.number_input("Vertical Base Force VBD,V (kN)", value=0.3*W_total)
 
-# ---------------- Storey data ----------------
-st.subheader("Storey-wise Data")
-N = st.number_input("Number of Storeys", 1, 25, 5)
+# -------------------------------------------------
+# STOREY INPUTS
+# -------------------------------------------------
+N = st.number_input("Number of Storeys", 1, 20, 5)
 
 H, W = [], []
 for i in range(N):
-    H.append(st.number_input(f"Height of Storey {i+1} from base (m)", value=(i+1)*h_total/N))
-    W.append(st.number_input(f"Weight of Storey {i+1} (kN)", value=W_total/N))
+    H.append(st.number_input(f"Height of storey {i+1} (m)", value=(i+1)*h_total/N))
+    W.append(st.number_input(f"Weight of storey {i+1} (kN)", value=W_total/N))
+
+# -------------------------------------------------
+# RESPONSE SPECTRUM INPUT
+# -------------------------------------------------
+Sa_RS = st.number_input("Sa/g from Response Spectrum Analysis", 0.0, 3.0)
+
+# -------------------------------------------------
+# MEMBER DISTRIBUTION INPUT
+# -------------------------------------------------
+diaphragm = st.selectbox("Diaphragm Type", ["Rigid","Flexible"])
+member_props = st.text_input(
+    "Member stiffness (Rigid) OR tributary areas (Flexible), comma-separated",
+    "30000,20000,10000"
+)
 
 # -------------------------------------------------
 # COMPUTE
@@ -88,84 +82,82 @@ if st.button("Compute Seismic Forces"):
 
     Z = ZONE_FACTOR[zone]
     R, c = STRUCTURE_R_T[structure]
-    site = classify_site(Vs)
-
-    # ---- Horizontal base shear ----
+    soil = classify_soil(Vs)
     T = time_period(h_total, c)
-    ANH = A_NH(T, site)
-    AHD = (Z * ANH) / R
-    VBD_H = AHD * W_total
 
-    # ---- Vertical base shear ----
-    Tv = 0.4
-    ANV = A_NV(Tv, site)
-    VBD_V = Z * ANV * W_total * VBD_V_factor
+    Sa_eq = Sa_static(T, soil)
+    Ah_eq = (Z * Sa_eq) / R
+    V_static = Ah_eq * W_total
+
+    Ah_rs = (Z * Sa_RS) / R
+    V_rs = Ah_rs * W_total
+
+    V_design = max(V_rs, 0.8 * V_static)
 
     # ---- Horizontal storey forces ----
     denom = sum(W[i]*H[i]**2 for i in range(N))
-    QH = [(W[i]*H[i]**2/denom)*VBD_H for i in range(N)]
+    QH = [(W[i]*H[i]**2/denom)*V_design for i in range(N)]
 
-    VH, cum = [], 0.0
+    VH, csum = [], 0
     for i in reversed(range(N)):
-        cum += QH[i]
-        VH.insert(0, cum)
+        csum += QH[i]
+        VH.insert(0, csum)
 
     # ---- Vertical storey forces ----
     QV = [(W[i]/sum(W))*VBD_V for i in range(N)]
-
-    VV, cum = [], 0.0
+    VV, csum = [], 0
     for i in reversed(range(N)):
-        cum += QV[i]
-        VV.insert(0, cum)
+        csum += QV[i]
+        VV.insert(0, csum)
 
-    # ---- Interaction ----
-    V_comb = [math.sqrt(VH[i]**2 + VV[i]**2) for i in range(N)]
+    # ---- Member distribution (example at Storey 1) ----
+    props = [float(x) for x in member_props.split(",")]
+    if diaphragm == "Rigid":
+        member_forces = [(k/sum(props))*VH[0] for k in props]
+    else:
+        member_forces = [(a/sum(props))*VH[0] for a in props]
 
     # ---- Results table ----
     df = pd.DataFrame({
-        "Storey": range(1, N+1),
+        "Storey": range(1,N+1),
         "Height (m)": H,
         "Weight (kN)": W,
         "Q_Di,H (kN)": QH,
         "V_Di,H (kN)": VH,
         "Q_Di,V (kN)": QV,
-        "V_Di,V (kN)": VV,
-        "Combined Shear (kN)": V_comb
+        "V_Di,V (kN)": VV
     })
 
     st.subheader("Storey-wise Seismic Forces")
     st.dataframe(df, use_container_width=True)
 
-    st.subheader("Base Shear Summary")
-    st.success(f"VBD,H = {VBD_H:.2f} kN")
-    st.success(f"VBD,V = {VBD_V:.2f} kN")
+    st.subheader("Response Spectrum vs Static")
+    st.write(f"V_static = {V_static:.2f} kN")
+    st.write(f"V_RS = {V_rs:.2f} kN")
+    st.success(f"Design Base Shear = {V_design:.2f} kN")
+
+    st.subheader("Member-level Forces at Storey 1")
+    st.write(member_forces)
 
     # ---- Excel export ----
     excel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
     df.to_excel(excel.name, index=False)
-    st.download_button("Download Excel",
+    st.download_button("Download Excel Storey Table",
                        open(excel.name,"rb"),
-                       "storey_seismic_forces.xlsx")
+                       "storey_forces.xlsx")
 
-    # ---- PDF export ----
+    # ---- PDF ----
     pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
     doc = SimpleDocTemplate(pdf.name, pagesize=A4,
                             rightMargin=25*mm,leftMargin=25*mm,
                             topMargin=25*mm,bottomMargin=25*mm)
     styles = getSampleStyleSheet()
     elems = [
-        Paragraph("IS 1893:2025 – Seismic Force Report", styles["Title"]),
+        Paragraph("IS 1893 – Seismic Force Report", styles["Title"]),
         Spacer(1,12),
         Table([df.columns.tolist()] + df.round(2).values.tolist())
     ]
     doc.build(elems)
-
     st.download_button("Download PDF Report",
                        open(pdf.name,"rb"),
-                       "seismic_force_report.pdf")
-
-# -------------------------------------------------
-st.caption(
-    "Calculations follow IS 1893 (Part 1):2025 equivalent static method "
-    "including vertical seismic effects."
-)
+                       "seismic_report.pdf")
