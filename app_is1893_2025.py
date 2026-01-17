@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import math
@@ -114,9 +113,6 @@ with tab1:
         with c5: st.metric("Vv (kN)", f"{Vv:.2f}")
 
 # ==================================================
-# TAB 2 – STOREY DISTRIBUTION
-# ==================================================
-# ==================================================
 # TAB 2 – STOREY DISTRIBUTION + PLOTS
 # ==================================================
 with tab2:
@@ -218,6 +214,7 @@ with tab2:
         fig3.savefig("storey_shear_XY.png", dpi=300)
 
 
+
 # ==================================================
 # TAB 3 – MULTI-ZONE STUDY + EXPORT
 # ==================================================
@@ -284,10 +281,7 @@ with tab3:
         st.download_button("Download Excel (with graph)", open(excel_file,"rb"), file_name=excel_file)
 
         # PDF
-       # ==================================================
-# PDF EXPORT – AUTO INCLUDE ALL STOREY PLOTS
-# ==================================================
-pdf_file="IS1893_2025_BaseShear_MultiZone.pdf"
+        pdf_file="IS1893_2025_BaseShear_MultiZone.pdf"
         doc=SimpleDocTemplate(pdf_file)
         styles=getSampleStyleSheet()
         content=[
@@ -300,9 +294,6 @@ pdf_file="IS1893_2025_BaseShear_MultiZone.pdf"
 
         st.download_button("Download PDF (with graph)", open(pdf_file,"rb"), file_name=pdf_file)
 
-
-
-
 # ==================================================
 # FOOTER
 # ==================================================
@@ -312,6 +303,9 @@ st.info(
     "Independent verification is mandatory before professional or statutory use.\n\n"
     "**Created by: Vrushali Kamalakar**"
 )
+
+
+
 
 
 
