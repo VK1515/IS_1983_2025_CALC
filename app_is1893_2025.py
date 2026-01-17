@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import pandas as pd
 import math
@@ -283,18 +284,51 @@ with tab3:
         st.download_button("Download Excel (with graph)", open(excel_file,"rb"), file_name=excel_file)
 
         # PDF
-        pdf_file="IS1893_2025_BaseShear_MultiZone.pdf"
-        doc=SimpleDocTemplate(pdf_file)
-        styles=getSampleStyleSheet()
-        content=[
-            Paragraph("IS 1893:2025 – Multi-Zone Base Shear Study", styles["Title"]),
-            Paragraph("For educational use only<br/>Created by: Vrushali Kamalakar", styles["Normal"]),
-            Table([dfz.columns.tolist()]+dfz.round(3).values.tolist()),
-            Image("base_shear_zone.png", width=400, height=250)
-        ]
-        doc.build(content)
+       # ==================================================
+# PDF EXPORT – AUTO INCLUDE ALL STOREY PLOTS
+# ==================================================
+pdf_file = "IS1893_2025_Seismic_Output.pdf"
+doc = SimpleDocTemplate(pdf_file)
+styles = getSampleStyleSheet()
 
-        st.download_button("Download PDF (with graph)", open(pdf_file,"rb"), file_name=pdf_file)
+content = [
+    Paragraph("IS 1893:2025 – Seismic Analysis Output", styles["Title"]),
+    Paragraph(
+        "Equivalent Static Method<br/>"
+        "For Educational Use Only<br/>"
+        "Created by: Vrushali Kamalakar",
+        styles["Normal"]
+    ),
+
+    Paragraph("<b>Base Shear Calculation Summary</b>", styles["Heading2"]),
+    Table(
+        [df_base.columns.tolist()] +
+        df_base.values.tolist()
+    ),
+
+    Paragraph("<b>Storey-wise Force Distribution</b>", styles["Heading2"]),
+    Table(
+        [df_storey.columns.tolist()] +
+        df_storey.round(3).values.tolist()
+    ),
+
+    Paragraph("<b>Storey Shear Diagrams</b>", styles["Heading2"]),
+]
+
+# ---------------- AUTO-INSERT STOREY SHEAR PLOTS ----------------
+plot_files = [
+    "storey_shear_X.png",
+    "storey_shear_Y.png",
+    "storey_shear_vertical.png",
+    "storey_shear_XY.png"
+]
+
+for plot in plot_files:
+    if os.path.exists(plot):
+        content.append(Image(plot, width=420, height=300))
+
+doc.build(content)
+
 
 # ==================================================
 # FOOTER
