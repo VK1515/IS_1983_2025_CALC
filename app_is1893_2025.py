@@ -115,33 +115,107 @@ with tab1:
 # ==================================================
 # TAB 2 – STOREY DISTRIBUTION
 # ==================================================
+# ==================================================
+# TAB 2 – STOREY DISTRIBUTION + PLOTS
+# ==================================================
 with tab2:
     st.subheader("Storey-wise Seismic Force Distribution")
 
     if not st.session_state.base_shear:
         st.warning("Compute base shear in Tab ① first.")
     else:
-        direction = st.selectbox("Horizontal Direction", ["X","Y"])
-        Vh = st.session_state.base_shear["Vx"] if direction=="X" else st.session_state.base_shear["Vy"]
+        direction = st.selectbox(
+            "Horizontal Direction for Distribution",
+            ["X", "Y"],
+            key="storey_dir"
+        )
+
+        Vh = (
+            st.session_state.base_shear["Vx"]
+            if direction == "X"
+            else st.session_state.base_shear["Vy"]
+        )
+        Vx = st.session_state.base_shear["Vx"]
+        Vy = st.session_state.base_shear["Vy"]
         Vv = st.session_state.base_shear["Vv"]
-        W = st.session_state.base_shear["W"]
+        W  = st.session_state.base_shear["W"]
 
-        N = st.number_input("Number of Storeys", min_value=1, value=5)
+        N = st.number_input(
+            "Number of Storeys",
+            min_value=1,
+            value=5,
+            step=1,
+            key="num_storeys"
+        )
 
-        rows=[]
-        for i in range(1,N+1):
-            Wi = st.number_input(f"W{i} (kN)", value=W/N, key=f"W{i}")
-            Hi = st.number_input(f"H{i} (m)", value=3*i, key=f"H{i}")
-            rows.append([i,Wi,Hi])
+        rows = []
+        for i in range(1, N + 1):
+            Wi = st.number_input(
+                f"W{i} (kN)",
+                value=W / N,
+                key=f"Wi_{i}"
+            )
+            Hi = st.number_input(
+                f"H{i} (m)",
+                value=3.0 * i,
+                key=f"Hi_{i}"
+            )
+            rows.append([i, Wi, Hi])
 
-        df = pd.DataFrame(rows, columns=["Storey","Wi (kN)","Hi (m)"])
-        df["WiHi²"]=df["Wi (kN)"]*df["Hi (m)"]**2
-        df["QDi,H"]=df["WiHi²"]/df["WiHi²"].sum()*Vh
-        df["VDi,H"]=df["QDi,H"][::-1].cumsum()[::-1]
-        df["QDi,V"]=df["Wi (kN)"]/df["Wi (kN)"].sum()*Vv
-        df["VDi,V"]=df["QDi,V"][::-1].cumsum()[::-1]
+        df = pd.DataFrame(rows, columns=["Storey", "Wi (kN)", "Hi (m)"])
+
+        # ---------------- DISTRIBUTION ----------------
+        df["WiHi²"] = df["Wi (kN)"] * df["Hi (m)"] ** 2
+
+        df["QDi,X"] = df["WiHi²"] / df["WiHi²"].sum() * Vx
+        df["QDi,Y"] = df["WiHi²"] / df["WiHi²"].sum() * Vy
+        df["QDi,V"] = df["Wi (kN)"] / df["Wi (kN)"].sum() * Vv
+
+        df["VDi,X"] = df["QDi,X"][::-1].cumsum()[::-1]
+        df["VDi,Y"] = df["QDi,Y"][::-1].cumsum()[::-1]
+        df["VDi,V"] = df["QDi,V"][::-1].cumsum()[::-1]
 
         st.dataframe(df.round(3), use_container_width=True)
+
+        # Save for export
+        st.session_state.storey_df = df
+
+        # ---------------- STOREY SHEAR PLOTS ----------------
+        st.markdown("### Storey Shear Diagrams (Height-based)")
+
+        # 1️⃣ Horizontal storey shear (selected direction)
+        fig1, ax1 = plt.subplots()
+        shear_col = "VDi,X" if direction == "X" else "VDi,Y"
+        ax1.plot(df[shear_col], df["Hi (m)"], marker="o")
+        ax1.set_xlabel("Storey Shear (kN)")
+        ax1.set_ylabel("Height (m)")
+        ax1.set_title(f"Storey Shear – {direction} Direction")
+        ax1.grid(True)
+        st.pyplot(fig1)
+        fig1.savefig(f"storey_shear_{direction}.png", dpi=300)
+
+        # 2️⃣ Vertical storey shear
+        fig2, ax2 = plt.subplots()
+        ax2.plot(df["VDi,V"], df["Hi (m)"], marker="s", color="black")
+        ax2.set_xlabel("Vertical Shear (kN)")
+        ax2.set_ylabel("Height (m)")
+        ax2.set_title("Vertical Storey Shear")
+        ax2.grid(True)
+        st.pyplot(fig2)
+        fig2.savefig("storey_shear_vertical.png", dpi=300)
+
+        # 3️⃣ Combined X & Y overlay
+        fig3, ax3 = plt.subplots()
+        ax3.plot(df["VDi,X"], df["Hi (m)"], marker="o", label="X-direction")
+        ax3.plot(df["VDi,Y"], df["Hi (m)"], marker="s", label="Y-direction")
+        ax3.set_xlabel("Storey Shear (kN)")
+        ax3.set_ylabel("Height (m)")
+        ax3.set_title("Combined Storey Shear – X & Y")
+        ax3.legend()
+        ax3.grid(True)
+        st.pyplot(fig3)
+        fig3.savefig("storey_shear_XY.png", dpi=300)
+
 
 # ==================================================
 # TAB 3 – MULTI-ZONE STUDY + EXPORT
