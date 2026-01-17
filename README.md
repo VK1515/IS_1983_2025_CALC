@@ -1,0 +1,1 @@
+IS 1893:2025 Static vs Response Spectrum comparison app
