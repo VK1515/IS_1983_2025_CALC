@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 import math
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Table
-from reportlab.lib.styles import getSampleStyleSheet
 
 # --------------------------------------------------
 # PAGE CONFIG
@@ -13,7 +11,7 @@ st.set_page_config(
 )
 
 st.title("IS 1893:2025 – Seismic Force Calculator")
-st.caption("Equivalent Static Method | Base Shear → Storey-wise Distribution")
+st.caption("Equivalent Static Method | Direction-wise (X & Y)")
 
 # --------------------------------------------------
 # Z TABLE (IS 1893:2025)
@@ -27,12 +25,10 @@ Z_TABLE = {
 }
 
 # --------------------------------------------------
-# SESSION STATE INIT
+# SESSION STATE
 # --------------------------------------------------
-if "V_BD_H" not in st.session_state:
-    st.session_state.V_BD_H = None
-    st.session_state.V_BD_V = None
-    st.session_state.W_total = None
+if "base_shear" not in st.session_state:
+    st.session_state.base_shear = {}
 
 # --------------------------------------------------
 # SPECTRAL FUNCTIONS
@@ -55,67 +51,69 @@ def gamma_v(TV, site):
 # --------------------------------------------------
 # TABS
 # --------------------------------------------------
-tab1, tab2 = st.tabs(["① Base Shear Calculation", "② Storey-wise Force Distribution"])
+tab1, tab2 = st.tabs(["① Base Shear (X & Y)", "② Storey-wise Distribution"])
 
 # ==================================================
 # TAB 1 – BASE SHEAR
 # ==================================================
 with tab1:
-    st.subheader("Base Shear Calculation")
+    st.subheader("Direction-wise Base Shear")
 
     zone = st.selectbox("Earthquake Zone", ["II","III","IV","V","VI"])
     TR = st.selectbox("Return Period TR (years)", [75,175,275,475,975,1275,2475,4975,9975])
     Z = Z_TABLE[zone][TR]
-
-    st.info(f"Design Zone Factor Z = {Z}")
+    st.info(f"Zone Factor Z = {Z}")
 
     I = st.number_input("Importance Factor (I)", value=1.0)
     R = st.number_input("Response Reduction Factor (R)", value=5.0)
     site = st.selectbox("Site Class", ["A/B","C","D"])
+    W = st.number_input("Total Seismic Weight W (kN)", value=10000.0)
 
-    W_total = st.number_input("Total Seismic Weight W (kN)", value=10000.0)
-
-    st.markdown("#### Approximate Fundamental Period (Horizontal)")
-    use_Ta = st.checkbox("Use Ta = 0.09H / √d", value=True)
-
+    st.markdown("### Building Geometry")
     H = st.number_input("Total Height H (m)", value=15.0)
-    d = st.number_input("Base Dimension d (m)", value=10.0)
-    TH_manual = st.number_input("Manual TH (s)", value=1.0)
+    dx = st.number_input("Plan Dimension in X direction (dx, m)", value=10.0)
+    dy = st.number_input("Plan Dimension in Y direction (dy, m)", value=15.0)
 
     TV = st.number_input("Vertical Period TV (s)", value=0.4)
 
-    TH = 0.09*H/math.sqrt(d) if use_Ta else TH_manual
+    if st.button("Compute Base Shear in X & Y"):
+        THx = 0.09 * H / math.sqrt(dx)
+        THy = 0.09 * H / math.sqrt(dy)
 
-    if st.button("Compute Base Shear"):
-        A_HD = (Z * I * A_NH(TH, site)) / R
-        V_BD_H = A_HD * W_total
+        Vx = (Z * I * A_NH(THx, site) / R) * W
+        Vy = (Z * I * A_NH(THy, site) / R) * W
 
-        A_NV = delta_v(TV, site) * gamma_v(TV, site)
-        V_BD_V = Z * I * A_NV * W_total
+        Vv = Z * I * delta_v(TV, site) * gamma_v(TV, site) * W
 
-        st.session_state.V_BD_H = V_BD_H
-        st.session_state.V_BD_V = V_BD_V
-        st.session_state.W_total = W_total
+        st.session_state.base_shear = {
+            "X": Vx,
+            "Y": Vy,
+            "V": Vv,
+            "W": W
+        }
 
-        st.success("Base shear computed and locked.")
-
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
         with c1:
-            st.metric("Horizontal Base Shear (kN)", f"{V_BD_H:.2f}")
+            st.metric("VBD,H,X (kN)", f"{Vx:.2f}")
         with c2:
-            st.metric("Vertical Base Shear (kN)", f"{V_BD_V:.2f}")
+            st.metric("VBD,H,Y (kN)", f"{Vy:.2f}")
+        with c3:
+            st.metric("VBD,V (kN)", f"{Vv:.2f}")
 
 # ==================================================
 # TAB 2 – STOREY DISTRIBUTION
 # ==================================================
 with tab2:
-    st.subheader("Storey-wise Seismic Force Distribution")
+    st.subheader("Storey-wise Force Distribution")
 
-    if st.session_state.V_BD_H is None:
+    if not st.session_state.base_shear:
         st.warning("Please compute base shear in Tab ① first.")
     else:
-        V_BD_H = st.session_state.V_BD_H
-        V_BD_V = st.session_state.V_BD_V
+        direction = st.selectbox("Select Direction", ["X","Y"])
+
+        V_BD = st.session_state.base_shear[direction]
+        V_BD_V = st.session_state.base_shear["V"]
+        W_total = st.session_state.base_shear["W"]
 
         N = st.number_input("Number of Storeys", min_value=1, value=5)
 
@@ -123,7 +121,7 @@ with tab2:
         for i in range(1, N+1):
             c1, c2 = st.columns(2)
             with c1:
-                Wi = st.number_input(f"W{i} (kN)", value=st.session_state.W_total/N, key=f"Wi{i}")
+                Wi = st.number_input(f"W{i} (kN)", value=W_total/N, key=f"Wi{i}")
             with c2:
                 Hi = st.number_input(f"H{i} (m)", value=3*i, key=f"Hi{i}")
             storey_data.append([i, Wi, Hi])
@@ -131,7 +129,7 @@ with tab2:
         df = pd.DataFrame(storey_data, columns=["Storey","Wi (kN)","Hi (m)"])
         df["WiHi²"] = df["Wi (kN)"] * df["Hi (m)"]**2
 
-        df["QDi,H (kN)"] = df["WiHi²"] / df["WiHi²"].sum() * V_BD_H
+        df["QDi,H (kN)"] = df["WiHi²"] / df["WiHi²"].sum() * V_BD
         df["VDi,H (kN)"] = df["QDi,H (kN)"][::-1].cumsum()[::-1]
 
         df["QDi,V (kN)"] = df["Wi (kN)"] / df["Wi (kN)"].sum() * V_BD_V
