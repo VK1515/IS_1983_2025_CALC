@@ -146,11 +146,21 @@ with tab2:
 # ==================================================
 # TAB 3 – MULTI-ZONE STUDY + EXPORT
 # ==================================================
+# ==================================================
+# TAB 3 – MULTI-ZONE STUDY + EXPORT
+# ==================================================
 with tab3:
     st.subheader("Multi-Zone Base Shear Comparison")
 
-    zones = st.multiselect("Select Zones", ["II","III","IV","V","VI"], default=["II","III","IV","V"])
-    TR = st.selectbox("Return Period (years)", [75,175,275,475,975,1275,2475,4975,9975], key="mz_tr")
+    zones = st.multiselect(
+        "Select Zones", ["II","III","IV","V","VI"], default=["II","III","IV","V"]
+    )
+    TR = st.selectbox(
+        "Return Period (years)",
+        [75,175,275,475,975,1275,2475,4975,9975],
+        key="mz_tr"
+    )
+
     I = st.number_input("Importance Factor", value=1.0, key="mz_I")
     R = st.number_input("Response Reduction Factor", value=5.0, key="mz_R")
     site = st.selectbox("Site Class", ["A/B","C","D"], key="mz_site")
@@ -163,12 +173,18 @@ with tab3:
         Tx = 0.09 * H / math.sqrt(dx)
         Ty = 0.09 * H / math.sqrt(dy)
 
-        data=[]
+        data = []
         for z in zones:
             Z = Z_TABLE[z][TR]
-            data.append([z,Z,(Z*I*A_NH(Tx,site)/R)*W,(Z*I*A_NH(Ty,site)/R)*W])
+            data.append([
+                z, Z,
+                (Z * I * A_NH(Tx, site) / R) * W,
+                (Z * I * A_NH(Ty, site) / R) * W
+            ])
 
-        dfz = pd.DataFrame(data, columns=["Zone","Z","Vx (kN)","Vy (kN)"])
+        dfz = pd.DataFrame(
+            data, columns=["Zone","Z","Vx (kN)","Vy (kN)"]
+        )
         st.session_state.multi_zone_df = dfz
 
         st.dataframe(dfz.round(3), use_container_width=True)
@@ -185,49 +201,57 @@ with tab3:
 
         fig.savefig("base_shear_zone.png", dpi=300)
 
-    # ---------------- EXPORT ----------------
-    if st.session_state.multi_zone_df is not None:
-        dfz = st.session_state.multi_zone_df
+    # ==================================================
+    # EXPORT – BASE SHEAR + MULTI-ZONE
+    # ==================================================
+    if st.session_state.base_shear and st.session_state.multi_zone_df is not None:
 
-        # Excel
-        excel_file="IS1893_2025_BaseShear_MultiZone.xlsx"
-        dfz.to_excel(excel_file,index=False)
-        wb=load_workbook(excel_file)
-        ws=wb.active
+        # ---------------- BASE SHEAR TABLE ----------------
+        base_df = pd.DataFrame(
+            list(st.session_state.base_shear.items()),
+            columns=["Parameter", "Value"]
+        )
 
-        chart=LineChart()
-        chart.title="Base Shear vs Zone"
-        chart.y_axis.title="Base Shear (kN)"
-        chart.x_axis.title="Zone"
-        data=Reference(ws,min_col=3,min_row=1,max_col=4,max_row=ws.max_row)
-        cats=Reference(ws,min_col=1,min_row=2,max_row=ws.max_row)
-        chart.add_data(data,titles_from_data=True)
-        chart.set_categories(cats)
-        ws.add_chart(chart,"G2")
-        wb.save(excel_file)
+        # ---------------- EXCEL ----------------
+        excel_file = "IS1893_2025_Full_Output.xlsx"
+        with pd.ExcelWriter(excel_file, engine="openpyxl") as writer:
+            base_df.to_excel(writer, sheet_name="Base_Shear", index=False)
+            st.session_state.multi_zone_df.to_excel(
+                writer, sheet_name="Multi_Zone_Base_Shear", index=False
+            )
 
-        st.download_button("Download Excel (with graph)", open(excel_file,"rb"), file_name=excel_file)
+        st.download_button(
+            "Download Excel (Base Shear + Multi-Zone)",
+            open(excel_file, "rb"),
+            file_name=excel_file
+        )
 
-        # PDF
-        pdf_file="IS1893_2025_BaseShear_MultiZone.pdf"
-        doc=SimpleDocTemplate(pdf_file)
-        styles=getSampleStyleSheet()
-        content=[
-            Paragraph("IS 1893:2025 – Multi-Zone Base Shear Study", styles["Title"]),
-            Paragraph("For educational use only<br/>Created by: Vrushali Kamalakar", styles["Normal"]),
-            Table([dfz.columns.tolist()]+dfz.round(3).values.tolist()),
+        # ---------------- PDF ----------------
+        pdf_file = "IS1893_2025_Full_Output.pdf"
+        doc = SimpleDocTemplate(pdf_file)
+        styles = getSampleStyleSheet()
+
+        content = [
+            Paragraph("IS 1893:2025 – Seismic Analysis Output", styles["Title"]),
+            Paragraph(
+                "For educational use only<br/>Created by: Vrushali Kamalakar",
+                styles["Normal"]
+            ),
+            Paragraph("<b>Base Shear Calculation</b>", styles["Heading2"]),
+            Table([base_df.columns.tolist()] + base_df.values.tolist()),
+            Paragraph("<b>Multi-Zone Base Shear</b>", styles["Heading2"]),
+            Table(
+                [st.session_state.multi_zone_df.columns.tolist()] +
+                st.session_state.multi_zone_df.round(3).values.tolist()
+            ),
             Image("base_shear_zone.png", width=400, height=250)
         ]
+
         doc.build(content)
 
-        st.download_button("Download PDF (with graph)", open(pdf_file,"rb"), file_name=pdf_file)
+        st.download_button(
+            "Download PDF (Base Shear + Multi-Zone)",
+            open(pdf_file, "rb"),
+            file_name=pdf_file
+        )
 
-# ==================================================
-# FOOTER
-# ==================================================
-st.markdown("---")
-st.info(
-    "📘 **For Educational Use Only**\n\n"
-    "Independent verification is mandatory before professional or statutory use.\n\n"
-    "**Created by: Vrushali Kamalakar**"
-)
