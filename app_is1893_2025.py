@@ -15,11 +15,10 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("IS 1893:2025 – Seismic Force Calculator")
+st.title("IS 1893:2025 – Seismic Base Shear Calculator")
 st.caption(
-    "Equivalent Static Method | Direction-wise | Multi-Zone Capability\n\n"
-    "⚠️ **For educational use only**  \n"
-    "**Created by: Vrushali Kamalakar**"
+    "Equivalent Static Method | Multi-Zone Capability\n\n"
+    
 )
 
 # ==================================================
